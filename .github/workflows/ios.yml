@@ -1,0 +1,66 @@
+name: iOS
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['ios/**', 'scripts/ios-bridge.js', 'test/ios-bridge.test.js', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**', 'scripts/ios-bridge.js', 'test/ios-bridge.test.js', '.github/workflows/ios.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify companion security and streaming
+        run: node --test test/ios-bridge.test.js
+      - name: Generate native project
+        run: |
+          brew install xcodegen
+          cd ios
+          xcodegen generate
+          xcodebuild -version
+      - name: Compile iPhone and iPad app
+        run: |
+          cd ios
+          xcodebuild -project Cuda.xcodeproj -scheme Cuda -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO build > build-device.log 2>&1 || { tail -150 build-device.log; exit 1; }
+          mkdir -p build/export/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/Cuda.app build/export/Payload/
+          cd build/export
+          /usr/bin/ditto -c -k --keepParent Payload Cuda-1.0.0-ios-unsigned.ipa
+          shasum -a 256 Cuda-1.0.0-ios-unsigned.ipa > SHA256SUMS.txt
+      - name: Test native app on iPhone Simulator
+        run: |
+          cd ios
+          xcrun simctl list devices available -j > build/devices.json
+          PHONE=$(python3 -c 'import json; d=json.load(open("build/devices.json")); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
+          echo "$PHONE" > build/phone-id
+          xcodebuild -project Cuda.xcodeproj -scheme Cuda -configuration Debug \
+            -destination "platform=iOS Simulator,id=$PHONE" -derivedDataPath build/simulator \
+            -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO test \
+            > build-simulator.log 2>&1 || { tail -150 build-simulator.log; exit 1; }
+      - name: Capture iPhone and iPad layouts
+        run: bash ios/scripts/screenshots.sh
+      - name: Upload IPA and verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cuda-iOS
+          path: |
+            ios/build/export/*.ipa
+            ios/build/export/SHA256SUMS.txt
+            ios/build/screenshots/*.png
+            ios/build/TestResults.xcresult
+            ios/build-device.log
+            ios/build-simulator.log
+          if-no-files-found: error

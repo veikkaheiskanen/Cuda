@@ -1,0 +1,21 @@
+import XCTest
+
+final class CudaUITests: XCTestCase {
+    func testShelfPlayerAndLocalAudio() {
+        let app = XCUIApplication(); app.launchEnvironment["CUDA_DEMO"] = "1"; app.launch()
+        XCTAssertTrue(app.navigationBars["Cuda"].waitForExistence(timeout: 10))
+        app.buttons["Play Blue hour, Cuda Sessions"].firstMatch.tap()
+        let play = app.buttons["mini-play"]
+        XCTAssertTrue(play.waitForExistence(timeout: 10))
+        let pausePredicate = NSPredicate(format: "label == %@", "Pause")
+        expectation(for: pausePredicate, evaluatedWith: play)
+        waitForExpectations(timeout: 15)
+        app.buttons["Open now playing"].tap()
+        XCTAssertTrue(app.navigationBars["Now playing"].waitForExistence(timeout: 5))
+        app.buttons["Favourite"].tap()
+        app.buttons["Done"].tap()
+        app.tabBars.buttons["Shelf"].tap()
+        XCTAssertTrue(app.navigationBars["Shelf"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Playlists"].exists)
+    }
+}

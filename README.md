@@ -73,3 +73,7 @@ The glass treatment combines Electron's native macOS vibrancy with custom interf
 - [**Deck by jarilehtinen**](https://github.com/jarilehtinen/deck) — inspiration and credited source for Spotify features.
 
 Cuda also uses Electron, librespot, FFmpeg, yt-dlp, HLS.js, and Tone.js. Native vendor code and redistributed tools retain their own license notices. See [LICENSE](LICENSE), [native/DECK-LICENSE](native/DECK-LICENSE), and the bundled third-party notices.
+
+## Cuda for iOS
+
+The native iPhone and iPad port lives in [ios/](ios/README.md). It supports local audio, Spotify through the official iOS SDK, and public streams through a paired Mac companion. The iOS workflow builds an unsigned IPA for signing and sideloading with your own Apple account. See the iOS guide for source requirements and features.

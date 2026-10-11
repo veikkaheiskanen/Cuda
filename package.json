@@ -19,7 +19,8 @@
     "build:mac:signed": "electron-builder --mac --arm64 --publish never -c.forceCodeSigning=true",
     "test:mac": "node scripts/smoke-macos.js",
     "test:ui": "RIFF_GLASS_QA=1 node scripts/smoke-macos.js",
-    "prepare:native": "node scripts/build-native.js"
+    "prepare:native": "node scripts/build-native.js",
+    "ios:bridge": "node scripts/ios-bridge.js"
   },
   "keywords": [],
   "author": "veikkaheiskanen",

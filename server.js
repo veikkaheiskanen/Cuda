@@ -1635,7 +1635,7 @@ const server = http.createServer(async (req, res) => {
         const status=spotifyProvider?.status() || {};
         const known=[...(original.alternatives||[]),...(status.tracks||[]),...(status.likedTracks||[])].filter(t=>sameRecording(original,t));
         const excluded=new Set(Array.isArray(payload.exclude)?payload.exclude:[]);
-        const usable=t=>t.platform!=='spotify'||status.playbackConnected;
+        const usable=t=>t.platform!=='spotify'||(!payload.mobile && status.playbackConnected);
         const cached=await findCachedFile(original.id);
         if(cached && !payload.refresh){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:original,stream:{success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(original.id))}`}}));}
         const native=[original,...known].find(t=>t.playable!==false&&t.platform==='spotify'&&usable(t)&&!excluded.has(t.platform+':'+t.id));

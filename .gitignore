@@ -13,3 +13,11 @@ bin/darwin-*/
 dev-app-update.yml
 
 native/spotify-player/target/
+
+ios/Cuda.xcodeproj/
+ios/build/
+ios/DerivedData/
+ios/*.ipa
+ios/*.xcarchive/
+ios/**/*.xcuserstate
+ios/**/xcuserdata/
