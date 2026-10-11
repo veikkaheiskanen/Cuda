@@ -66,7 +66,7 @@ async function invoke(method,args) {
  throw new Error('Unknown native operation');
 }
 const lines=readline.createInterface({input:process.stdin});
-lines.on('line',async line=>{let message;try{if(line.length>2_000_000)throw new Error('Request too large');message=JSON.parse(line);const data=await invoke(message.method,message.args||{});send({id:message.id,data});}catch(error){if(message?.id)send({id:message.id,error:error.message});}});
+lines.on('line',async line=>{let message;try{if(line.length>8_000_000)throw new Error('Request too large');message=JSON.parse(line);if(line.length>2_000_000&&message.method!=='syncExchange')throw new Error('Request too large');const data=await invoke(message.method,message.args||{});send({id:message.id,data});}catch(error){if(message?.id)send({id:message.id,error:error.message});}});
 async function stop(){if(closing)return;closing=true;await discord.close();await shelfSync?.close();spotify?.close();await require('../server').stopServer().catch(()=>{});process.exit(0);}
 lines.on('close',stop);process.on('SIGTERM',stop);process.on('SIGINT',stop);
 module.exports={secureStore};

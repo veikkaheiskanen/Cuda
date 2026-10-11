@@ -38,7 +38,7 @@ final class LocalAudio {
     var position: Double {
         if streaming {
             let sample = node.lastRenderTime.flatMap { node.playerTime(forNodeTime: $0)?.sampleTime } ?? 0
-            return max(0, streamOffset + Double(sample) / 44100)
+            return max(0, streamOffset + Double(max(0, sample)) / 44100)
         }
         guard let file else { return 0 }
         let sample = node.lastRenderTime.flatMap { node.playerTime(forNodeTime: $0)?.sampleTime } ?? scheduledSample
