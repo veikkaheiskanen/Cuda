@@ -24,10 +24,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            flag: --win
-          - os: ubuntu-latest
-            flag: --linux
           - os: macos-15
             flag: --mac --arm64
     runs-on: ${{ matrix.os }}
