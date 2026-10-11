@@ -1,5 +1,17 @@
 import SwiftUI
 
+struct DeviceSyncPrompt: ViewModifier {
+    @ObservedObject var sync: DeviceSync
+    func body(content: Content) -> some View {
+        content.alert("Pair with this Cuda Mac?", isPresented: Binding(get: { sync.pendingPair != nil }, set: { if !$0 { sync.pendingPair = nil } })) {
+            Button("Pair & sync") { if let candidate = sync.pendingPair { Task { await sync.pair(candidate) } } }
+            Button("Cancel", role: .cancel) { sync.pendingPair = nil }
+        } message: {
+            Text("Your playlists, favourites and offline songs will sync with the Mac whose pairing code you scanned. Use this only with your own Mac.")
+        }
+    }
+}
+
 struct DeviceSyncSettings: View {
     @ObservedObject var sync: DeviceSync
     @State private var link = ""

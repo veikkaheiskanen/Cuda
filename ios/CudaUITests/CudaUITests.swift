@@ -2,6 +2,7 @@ import XCTest
 
 final class CudaUITests: XCTestCase {
     func testShelfPlayerAndLocalAudio() {
+        continueAfterFailure = false
         let app = XCUIApplication(); app.launchEnvironment["CUDA_DEMO"] = "1"; app.launch()
         XCTAssertTrue(app.navigationBars["Cuda"].waitForExistence(timeout: 10))
         let song = app.buttons["Play Blue hour, Cuda Sessions"].firstMatch

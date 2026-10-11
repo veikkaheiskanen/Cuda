@@ -62,7 +62,7 @@ struct RootView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if player.current != nil { MiniPlayer(player: player, spotify: store.spotify, expand: { expanded = true }).padding(.horizontal, 12).padding(.vertical, 8) }
+                PlayerDock(player: player, spotify: store.spotify, expand: { expanded = true })
             }
         }
     }
@@ -281,6 +281,17 @@ struct PlaylistEditor: View {
             Form { TextField("Name", text: $name).onChange(of: name) { _, value in name = String(value.prefix(80)) }; TextField("Description", text: $description, axis: .vertical).lineLimit(3...5).onChange(of: description) { _, value in description = String(value.prefix(300)) } }
                 .navigationTitle("Playlist").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { save(name.trimmingCharacters(in: .whitespacesAndNewlines), description); dismiss() }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
+        }
+    }
+}
+struct PlayerDock: View {
+    @ObservedObject var player: Player
+    @ObservedObject var spotify: Spotify
+    var expand: () -> Void
+    var body: some View {
+        if player.current != nil {
+            MiniPlayer(player: player, spotify: spotify, expand: expand)
+                .padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
 }

@@ -13,10 +13,7 @@ struct CudaApp: App {
                 .tint(.blue)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .onOpenURL { if $0.scheme == "cuda-sync" { store.deviceSync.offer($0) } else { store.spotify.handle($0) } }
-                .alert("Pair with this Cuda Mac?", isPresented: Binding(get: { store.deviceSync.pendingPair != nil }, set: { if !$0 { store.deviceSync.pendingPair = nil } })) {
-                    Button("Pair & sync") { if let candidate = store.deviceSync.pendingPair { Task { await store.deviceSync.pair(candidate) } } }
-                    Button("Cancel", role: .cancel) { store.deviceSync.pendingPair = nil }
-                } message: { Text("Your playlists, favourites and offline songs will sync with the Mac whose pairing code you scanned. Use this only with your own Mac.") }
+                .modifier(DeviceSyncPrompt(sync: store.deviceSync))
                 .onChange(of: phase) { _, phase in
                     if phase == .active { store.spotify.foreground(); store.deviceSync.activate(true) }
                     if phase == .background { store.spotify.background(); store.deviceSync.activate(false) }
