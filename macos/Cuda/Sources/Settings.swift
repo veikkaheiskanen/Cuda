@@ -31,7 +31,7 @@ struct AudioView: View {
                     Button("Reset audio") { player.effects = Effects() }
                 }
                 if !fullEffects { Text("Public streams support volume and speed. Equalizer, pitch and effects are available for Spotify and imported audio.").font(.callout).foregroundStyle(.secondary) }
-            }.formStyle(.grouped)
+            }.formStyle(.grouped).scrollContentBackground(.hidden)
         }
     }
     private func effectSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, suffix: String) -> some View {
@@ -78,10 +78,10 @@ struct SettingsView: View {
                 Section("Your Shelf") { Button("Export Shelf backup", systemImage: "square.and.arrow.up") { store.exportShelf() }; Button("Import Shelf backup", systemImage: "square.and.arrow.down") { store.importShelf() } }
                 Section("About") {
                     Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                    LabeledContent("Cuda Native", value: "1.0.0")
+                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1")
                     Button("About Cuda") { about = true }
                 }
-            }.formStyle(.grouped)
+            }.formStyle(.grouped).scrollContentBackground(.hidden)
         }.onAppear { client = store.spotify.clientId; username = store.spotify.lastfm?.username ?? ""; apiKey = store.spotify.lastfm?.apiKey ?? "" }
             .onChange(of: theme) { _, value in Appearance.apply(value) }
             .sheet(isPresented: $selecting) { SpotifyPicker(store: store) }

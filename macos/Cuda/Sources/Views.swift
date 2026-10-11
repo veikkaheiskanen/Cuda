@@ -15,7 +15,6 @@ struct RootView: View {
     @State private var expanded = false
     @State private var playlist: String?
     @FocusState private var searchFocused: Bool
-    @AppStorage("native-transparency") private var transparent = true
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
@@ -41,11 +40,14 @@ struct RootView: View {
                     content
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if player.current != nil { CompactPlayer(player: player, expand: { expanded = true }).padding(14) }
             }
-            .background { WindowMaterial(enabled: transparent) }
+            .background { WindowBackground() }
         }
+        .scrollContentBackground(.hidden)
+        .containerBackground(for: .window) { WindowBackground() }
         .navigationTitle("Cuda")
         .searchable(text: $query, placement: .toolbar, prompt: "Search music, artists, or albums")
         .searchFocused($searchFocused)
@@ -82,6 +84,7 @@ struct RootView: View {
         #if DEBUG
         if ProcessInfo.processInfo.environment["CUDA_NATIVE_CAPTURE"] == "1" {
             if ProcessInfo.processInfo.environment["CUDA_NATIVE_PAGE"] == "shelf" { page = .shelf }
+            if ProcessInfo.processInfo.environment["CUDA_NATIVE_PAGE"] == "search" { page = .search }
             if ProcessInfo.processInfo.environment["CUDA_NATIVE_PAGE"] == "settings" { page = .settings }
             if let track = store.state.local.first { player.play(track, in: store.state.local) }
             if ProcessInfo.processInfo.environment["CUDA_NATIVE_PAGE"] == "player" { expanded = true }
@@ -94,22 +97,59 @@ struct MiniWindowButton: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View { Button { openWindow(id: "mini") } label: { Label("Open mini player", systemImage: "pip") } }
 }
+struct WindowBackground: View {
+    @AppStorage("native-transparency") private var transparent = true
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    var body: some View {
+        ZStack {
+            if !transparent || reduceTransparency { Color(nsColor: .windowBackgroundColor) }
+            WindowMaterial(enabled: transparent && !reduceTransparency)
+        }.ignoresSafeArea()
+    }
+}
 struct WindowMaterial: NSViewRepresentable {
     var enabled: Bool
-    func makeNSView(context: Context) -> NSVisualEffectView { let view = NSVisualEffectView(); view.blendingMode = .behindWindow; view.material = .underWindowBackground; view.state = .active; return view }
-    func updateNSView(_ view: NSVisualEffectView, context: Context) { view.isHidden = !enabled || NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency }
+    func makeNSView(context: Context) -> NativeWindowMaterial {
+        let view = NativeWindowMaterial()
+        view.blendingMode = .behindWindow
+        view.material = .underWindowBackground
+        view.state = .active
+        view.enabled = enabled
+        return view
+    }
+    func updateNSView(_ view: NativeWindowMaterial, context: Context) { view.enabled = enabled }
+}
+final class NativeWindowMaterial: NSVisualEffectView {
+    var enabled = true { didSet { configureWindow() } }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); configureWindow() }
+    private func configureWindow() {
+        isHidden = !enabled
+        window?.isOpaque = !enabled
+        window?.backgroundColor = enabled ? .clear : .windowBackgroundColor
+    }
 }
 struct Cover: View {
     var track: Track?
     var body: some View {
-        ZStack {
-            Rectangle().fill(.quaternary)
-            if let raw = track?.thumbnail, raw.hasPrefix("demo-"), let url = Bundle.main.url(forResource: raw, withExtension: "png"), let image = NSImage(contentsOf: url) {
-                Image(nsImage: image).resizable().scaledToFill()
-            } else if let raw = track?.thumbnail, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? ""), url.scheme == "https" || url.host == "127.0.0.1" {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { fallback }
-            } else { fallback }
-        }.aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
+        // The layout is owned by this square, never by the image's intrinsic size.
+        GeometryReader { geometry in
+            ZStack {
+                Rectangle().fill(.quaternary)
+                artwork
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .accessibilityHidden(true)
+    }
+    @ViewBuilder private var artwork: some View {
+        if let raw = track?.thumbnail, raw.hasPrefix("demo-"), let url = Bundle.main.url(forResource: raw, withExtension: "png"), let image = NSImage(contentsOf: url) {
+            Image(nsImage: image).resizable().scaledToFill()
+        } else if let raw = track?.thumbnail, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? ""), url.scheme == "https" || url.host == "127.0.0.1" {
+            AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { fallback }
+        } else { fallback }
     }
     private var fallback: some View { Image(systemName: "music.note").font(.system(size: 26, weight: .medium)).foregroundStyle(.secondary) }
 }
@@ -237,9 +277,9 @@ struct SearchView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Header(title: "Search", subtitle: query.isEmpty ? "Songs, artists, and new discoveries" : "Results for “\(query)”"); if store.searching { ProgressView().controlSize(.small) } }.padding(.horizontal, 28).padding(.top, 28)
-            if store.results.isEmpty { ContentUnavailableView(query.isEmpty ? "Find your next favourite" : store.searching ? "Searching your sources…" : "No songs found", systemImage: "magnifyingglass", description: Text(query.isEmpty ? "Use the search field in the toolbar. Results arrive as each source responds." : "Try another artist or song name.")) }
+            if store.results.isEmpty { ContentUnavailableView(query.isEmpty ? "Find your next favourite" : store.searching ? "Searching your sources…" : "No songs found", systemImage: "magnifyingglass", description: Text(query.isEmpty ? "Use the search field in the toolbar. Results arrive as each source responds." : "Try another artist or song name.")).frame(maxWidth: .infinity, maxHeight: .infinity) }
             else { List { ForEach(store.results, id: \.key) { TrackRow(track: $0, queue: store.results, store: store, player: player) } }.listStyle(.inset) }
-        }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 struct SongList: View {
@@ -248,7 +288,7 @@ struct SongList: View {
     var tracks: [Track]
     @ObservedObject var store: Store
     @ObservedObject var player: Player
-    var body: some View { VStack(alignment: .leading) { Header(title: title, subtitle: subtitle).padding(28); if tracks.isEmpty { ContentUnavailableView("No songs yet", systemImage: "music.note", description: Text("Play music to fill this view.")) } else { List { ForEach(Track.unique(tracks), id: \.key) { TrackRow(track: $0, queue: tracks, store: store, player: player) } }.listStyle(.inset) } } }
+    var body: some View { VStack(alignment: .leading) { Header(title: title, subtitle: subtitle).padding(28); if tracks.isEmpty { ContentUnavailableView("No songs yet", systemImage: "music.note", description: Text("Play music to fill this view.")).frame(maxWidth: .infinity, maxHeight: .infinity) } else { List { ForEach(Track.unique(tracks), id: \.key) { TrackRow(track: $0, queue: tracks, store: store, player: player) } }.listStyle(.inset) } }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading) }
 }
 struct PlaylistDetail: View {
     var id: String

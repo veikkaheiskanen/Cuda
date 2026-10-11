@@ -13,9 +13,9 @@ struct CudaNativeApp: App {
         }.defaultSize(width: 1120, height: 780).windowToolbarStyle(.unified)
         .commands { CudaCommands(store: store); SidebarCommands() }
         Window("Cuda Mini Player", id: "mini") {
-            MiniPlayerWindow(player: store.player).frame(minWidth: 350, minHeight: 90).padding(12)
+            MiniPlayerWindow(player: store.player).containerBackground(for: .window) { WindowBackground() }.frame(minWidth: 350, minHeight: 90).padding(12)
         }.defaultSize(width: 460, height: 120).windowResizability(.contentMinSize)
-        Settings { SettingsView(store: store).frame(width: 640, height: 700) }
+        Settings { SettingsView(store: store).frame(width: 640, height: 700).containerBackground(for: .window) { WindowBackground() } }
     }
 }
 @MainActor
@@ -65,7 +65,7 @@ struct MiniPlayerWindow: View {
 enum NativeCapture {
     static func save() {
         guard let output = ProcessInfo.processInfo.environment["CUDA_NATIVE_PROFILE"], let window = NSApp.windows.first(where: { $0.title == "Cuda" }) else { return }
-        let values: [String: Any] = ["native": true, "frame": NSStringFromRect(window.frame), "title": window.title, "viewClass": String(describing: type(of: window.contentView!)), "titled": window.styleMask.contains(.titled), "resizable": window.styleMask.contains(.resizable)]
+        let values: [String: Any] = ["native": true, "frame": NSStringFromRect(window.frame), "title": window.title, "viewClass": String(describing: type(of: window.contentView!)), "titled": window.styleMask.contains(.titled), "resizable": window.styleMask.contains(.resizable), "opaque": window.isOpaque]
         try? JSONSerialization.data(withJSONObject: values, options: .prettyPrinted).write(to: URL(fileURLWithPath: output).appendingPathComponent("native-ready.json"))
     }
 }

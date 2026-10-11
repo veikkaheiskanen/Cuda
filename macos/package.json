@@ -1,8 +1,10 @@
 {
   "name": "cuda-native-service",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Private music resolver and safe legacy Shelf migration for Cuda's native macOS app",
   "license": "MIT",
-  "dependencies": {"classic-level": "3.0.0"}
+  "dependencies": {
+    "classic-level": "3.0.0"
+  }
 }

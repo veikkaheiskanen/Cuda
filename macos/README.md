@@ -31,7 +31,9 @@ Cuda keeps the existing `~/Library/Application Support/Riff` media folder. On fi
 
 **Reconnect the Spotify library once in Settings.** The Electron-encrypted catalog token remains untouched; the native app uses its own Keychain-encrypted token file. Existing Spotify playback credentials remain compatible. Select playlists in Settings to bring them into Shelf and recommendations. Home also includes weekly album picks and genre radio; browse albums, play them, or add them to Shelf. Favourites are saved locally first; a Spotify sync error cannot interrupt playback or undo the local favourite.
 
-Light, dark, and system appearance, transparency, and a 0–100% glass tint persist. macOS Reduce Transparency is respected by native materials. `Command-F` opens search, `Command-O` imports music, `Command-Shift-P` opens the player, and `Command-Shift-M` opens the mini player. Space toggles playback while ordinary text entry retains its spaces.
+All artwork is center-cropped inside a fixed square frame, including wide video thumbnails. Empty Search fills the detail pane and keeps the compact player at the bottom.
+
+Light, dark, and system appearance, transparency, and a 0–100% glass tint persist. Settings and Audio forms share the window material; the transparency switch updates the native window immediately. macOS Reduce Transparency is respected by native materials. `Command-F` opens search, `Command-O` imports music, `Command-Shift-P` opens the player, and `Command-Shift-M` opens the mini player. Space toggles playback while ordinary text entry retains its spaces.
 
 This first native release ports the central music workflow. The legacy Discord integration, translated/synced lyric view, and updater UI are not included. Updates are available through GitHub releases. Provider availability and resolution times still depend on the network and service.
 
