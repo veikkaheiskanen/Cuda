@@ -8,7 +8,7 @@
 
 Cuda is a music player for Apple Silicon, built by [veikkaheiskanen](https://github.com/veikkaheiskanen). A clean, Liquid Glass-inspired interface brings Spotify, YouTube, YouTube Music, SoundCloud, and your own audio files into one place.
 
-[Explore the app](#a-place-for-every-song) · [Build for Mac](#build-for-mac) · [Spotify setup](SPOTIFY.md) · [Report an issue](https://github.com/veikkaheiskanen/Cuda/issues)
+[Download for Mac](https://github.com/veikkaheiskanen/Cuda/releases/latest) · [Explore the app](#a-place-for-every-song) · [Build for Mac](#build-for-mac) · [Spotify setup](SPOTIFY.md) · [Report an issue](https://github.com/veikkaheiskanen/Cuda/issues)
 
 ## A place for every song
 
