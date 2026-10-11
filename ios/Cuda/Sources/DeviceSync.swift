@@ -29,7 +29,7 @@ final class SyncTrust: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     init(_ fingerprint: String) { self.fingerprint = fingerprint }
     func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust else { completionHandler(.performDefaultHandling, nil); return }
-        guard let trust = challenge.protectionSpace.serverTrust, let cert = SecTrustGetCertificateAtIndex(trust, 0) else { completionHandler(.cancelAuthenticationChallenge, nil); return }
+        guard let trust = challenge.protectionSpace.serverTrust, let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate], let cert = chain.first else { completionHandler(.cancelAuthenticationChallenge, nil); return }
         let data = SecCertificateCopyData(cert) as Data
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         guard hash == fingerprint else { completionHandler(.cancelAuthenticationChallenge, nil); return }

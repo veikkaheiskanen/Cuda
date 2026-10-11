@@ -17,7 +17,7 @@ targets:
   Cuda:
     type: application
     platform: iOS
-    sources: [Cuda/Sources, Cuda/Resources, ../shared]
+    sources: [Cuda/Sources, Cuda/Resources, ../shared/SyncState.swift]
     dependencies:
       - package: SpotifyiOS
     settings:
