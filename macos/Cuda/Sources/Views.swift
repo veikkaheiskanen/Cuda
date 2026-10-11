@@ -378,16 +378,20 @@ struct NowPlaying: View {
     @State private var seek = 0.0
     @State private var dragging = false
     @State private var audio = false
+    @State private var lyrics = false
     var body: some View {
         VStack(spacing: 20) {
-            HStack { Text("Now playing").font(.headline); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
-            ScrollView {
+            HStack { Text("Now playing").font(.headline); Spacer(); Button(lyrics ? "Player" : "Lyrics", systemImage: lyrics ? "music.note" : "quote.bubble") { lyrics.toggle() }.buttonStyle(.glass); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            if lyrics {
+                VStack(alignment: .leading, spacing: 4) { Text(player.current?.title ?? "Choose a song").font(.title2.bold()); Text(player.current?.artist ?? "").foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
+                LyricsPanel(player: player).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else { ScrollView {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .center, spacing: 32) { Cover(track: player.current).frame(width: 300, height: 300); controls.frame(width: 320) }
                     VStack(spacing: 24) { Cover(track: player.current).frame(width: 220, height: 220); controls }
                 }
-            }.scrollIndicators(.hidden)
-        }.padding(28).frame(width: width, height: width < 680 ? min(700, (NSScreen.main?.visibleFrame.height ?? 800) - 80) : 440)
+            }.scrollIndicators(.hidden) }
+        }.padding(28).frame(width: width, height: lyrics || width < 680 ? min(700, (NSScreen.main?.visibleFrame.height ?? 800) - 80) : 440)
         .sheet(isPresented: $audio) { VStack { AudioView(player: player); Button("Done") { audio = false }.padding() }.frame(width: min(550, width), height: 620) }
     }
     private var width: CGFloat { min(720, max(360, (NSApp.mainWindow?.frame.width ?? 800) - 48)) }

@@ -7,8 +7,8 @@
 <key>CFBundleExecutable</key><string>Cuda</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>Cuda.icns</string>
-<key>CFBundleShortVersionString</key><string>1.0.3</string>
-<key>CFBundleVersion</key><string>4</string>
+<key>CFBundleShortVersionString</key><string>1.0.4</string>
+<key>CFBundleVersion</key><string>5</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>

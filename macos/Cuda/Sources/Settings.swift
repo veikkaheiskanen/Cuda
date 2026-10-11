@@ -76,10 +76,11 @@ struct SettingsView: View {
                     Text("Adds your Last.fm taste to Spotify’s weekly discovery picks.").font(.callout).foregroundStyle(.secondary)
                 }
                 DiscordSettings(presence: store.discord)
+                LyricsSettings(runtime: store.runtime)
                 Section("Your Shelf") { Button("Export Shelf backup", systemImage: "square.and.arrow.up") { store.exportShelf() }; Button("Import Shelf backup", systemImage: "square.and.arrow.down") { store.importShelf() } }
                 Section("About") {
                     Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.3")
+                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.4")
                     Button("About Cuda") { about = true }
                 }
             }.formStyle(.grouped).scrollContentBackground(.hidden)

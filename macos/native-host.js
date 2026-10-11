@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const root=path.resolve(__dirname,'..');
 const send=value=>process.stdout.write(JSON.stringify(value)+'\n');
 console.log=()=>{};console.warn=()=>{};console.error=()=>{};
-let spotify,port,closing=false,searchAbort;
+let spotify,lyrics,port,closing=false,searchAbort;
 const discord = new (require('./discord-presence').DiscordPresence)({emit: value => send({event: 'discord', value})});
 const serviceToken=crypto.randomBytes(32).toString('hex');
 function privateMedia(value) {
@@ -21,6 +21,7 @@ async function invoke(method,args) {
   const directory=process.env.RIFF_DATA_DIR;
   const {createSpotify}=require('../spotify-service');
   spotify=createSpotify({directory,safeStorage:secureStore(Buffer.from(args.key,'base64')),tokenName:'spotify-account-native.enc',binary:process.env.RIFF_RIFFSPOTIFYPLAYER,openExternal:url=>send({event:'openURL',url}),emit:value=>send({event:'spotify',value})});
+  lyrics=new (require('./lyrics-service').LyricsService)({directory,store:secureStore(Buffer.from(args.key,'base64')),fallback:async(title,artist)=>{const value=await invoke('api',{path:'/api/lyrics?'+new URLSearchParams({title,artist})});return value.lyrics||'';}});
   process.env.CUDA_NATIVE_SERVICE_TOKEN=serviceToken;
   const server=require('../server');server.setSpotifyProvider(spotify);port=await server.startServer(0);
   const migration=await require('./legacy-shelf').migrateShelf(directory);
@@ -30,6 +31,10 @@ async function invoke(method,args) {
  if(!port)throw new Error('Audio services are starting.');
  if(method==='discordConfigure')return discord.configure(args.enabled,args.clientID);
  if(method==='discordUpdate'){discord.update(args);return discord.status;}
+ if(method==='lyricsStatus')return lyrics.status();
+ if(method==='lyricsConfigure')return lyrics.configure(args);
+ if(method==='lyricsGet')return lyrics.get(args);
+ if(method==='lyricsViewed'){await lyrics.viewed(args.token);return {};}
  if(method==='spotify')return spotify.invoke(args.operation,args.values||[]);
  if(method==='search') {
   searchAbort?.abort();searchAbort=new AbortController();const controller=searchAbort;

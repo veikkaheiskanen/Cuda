@@ -35,7 +35,7 @@ All artwork is center-cropped inside a fixed square frame, including wide video 
 
 Buttons, sliders and active playback controls follow the accent color selected in macOS System Settings → Appearance. The player glass stays neutral and follows light/dark window colors. Light, dark, and system appearance, transparency, and a 0–100% glass tint persist. Settings and Audio forms share the window material; the transparency switch updates the native window immediately. macOS Reduce Transparency is respected by native materials. `Command-F` opens search, `Command-O` imports music, `Command-Shift-P` opens the player, and `Command-Shift-M` opens the mini player. Space toggles playback while ordinary text entry retains its spaces.
 
-This first native release ports the central music workflow. The translated/synced lyric view and updater UI are not included. Updates are available through GitHub releases. Provider availability and resolution times still depend on the network and service.
+This first native release ports the central music workflow. The translated lyric view and updater UI are not included. Updates are available through GitHub releases. Provider availability and resolution times still depend on the network and service.
 
 ## Discord Rich Presence
 
@@ -46,6 +46,18 @@ Keep the Discord **desktop app** open and enable activity sharing in Discord's A
 Rich Presence includes the current song and artist, public cover artwork when available, playback timing, and a service link for Spotify, YouTube, YouTube Music or SoundCloud. Pausing removes the running timer and shows **Paused**; seeking and playback speed changes update the timing. Loading or failed playback clears the activity. Turning sharing off or quitting Cuda clears it. Local file paths, loopback URLs and account tokens are never shared. Sharing is off by default and has no effect on audio when Discord is unavailable.
 
 The [Discord IPC integration guide](https://github.com/discord/discord-rpc/blob/master/documentation/hard-mode.md) describes the framed socket transport and `SET_ACTIVITY` command used here. Tests exercise that transport with a local mock, without publishing to a Discord account.
+
+## Lyrics in Now Playing
+
+Open the player and choose **Lyrics**. The source menu offers **Auto**, **LyricFind**, **Musixmatch**, and **Genius**. Auto tries configured licensed providers, then the existing LRCLIB lookup, then a Genius song-page link. The panel follows song changes, preserves copyright notices, and highlights synced LRC lines when returned. Click a timed line to seek.
+
+Open **Settings → Lyrics** to configure providers. Keys are stored in an authenticated-encrypted file using the native Keychain key; they are not stored in plain preferences or exposed by the local HTTP API. Empty key fields preserve existing keys. Use **Remove provider keys** to clear them.
+
+- **LyricFind:** needs licensed Search and Display keys and a licensed territory. The connector uses the HTTPS Search/Display APIs and an ISRC from the matched recording. The older AMG/ELID identifiers are no longer accepted by the current API. Provider-account response compatibility and catalogue coverage require verification with your licensed credentials. [Request access](https://www.lyricfind.com/contact).
+- **Musixmatch:** add an API key with lyrics access. Text and copyright are displayed as supplied, territory restrictions are respected, and a returned display pixel is requested when the text is shown. Full lyrics or previews depend on your access. [API documentation](https://github.com/musixmatch/musixmatch-sdk/blob/master/swagger/swagger.json).
+- **Genius:** an optional access token enables exact song lookup through its supported search API. Full lyrics and annotations open on Genius; they are not scraped into Cuda. Without a token, the button opens a search for the song and artist. [Create an API client](https://genius.com/api-clients), [API reference](https://docs.genius.com/).
+
+Provider integrations are tested with original lyric fixtures and mock API responses. No real licensed keys have been supplied for live full-lyrics verification. Lyrics errors remain in the panel and never stop audio.
 
 ## Checks and distribution
 
