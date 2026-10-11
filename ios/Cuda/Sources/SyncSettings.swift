@@ -1,0 +1,26 @@
+import SwiftUI
+
+struct DeviceSyncSettings: View {
+    @ObservedObject var sync: DeviceSync
+    @State private var link = ""
+    var body: some View {
+        Section {
+            if sync.pairing == nil {
+                TextField("Paste Mac pairing link", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                Button("Pair Mac", systemImage: "link") {
+                    do { let value = try SyncPairing.parse(link); Task { await sync.pair(value); if sync.pairing != nil { link = "" } } } catch { sync.message = error.localizedDescription }
+                }.disabled(sync.busy || link.isEmpty)
+            } else {
+                Toggle("Automatic sync", isOn: $sync.enabled)
+                Toggle("Sync offline songs", isOn: $sync.offline)
+                Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await sync.sync() } }.disabled(sync.busy)
+                Button("Disconnect Mac", role: .destructive) { sync.disconnect() }
+            }
+            if sync.busy { HStack { ProgressView(); Text(sync.progress.isEmpty ? "Syncing your Shelf…" : sync.progress).font(.subheadline) } }
+            Text(sync.message).font(.subheadline).foregroundStyle(.secondary)
+            if let last = sync.lastSync { LabeledContent("Last synced") { Text(last, style: .relative).font(.subheadline) } }
+        } header: { Text("Device sync") } footer: {
+            Text("Enable Device sync in Cuda’s Mac Settings. Scan its code with Camera or paste its pairing link here. Favourites, playlists and new offline songs sync both ways over encrypted Wi-Fi. Your Mac must be awake with Cuda open. iOS schedules background checks when allowed and catches up automatically whenever you open Cuda.")
+        }
+    }
+}

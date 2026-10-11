@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var selecting = false
     var body: some View {
         Form {
+            DeviceSyncSettings(sync: store.deviceSync)
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
             }
@@ -39,7 +40,7 @@ struct SettingsView: View {
             }
             Section("About") {
                 Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                LabeledContent("Cuda for iOS", value: "1.0.0")
+                LabeledContent("Cuda for iOS", value: "1.1.0")
                 Link("Source & setup", destination: URL(string: "https://github.com/veikkaheiskanen/Cuda/tree/main/ios")!)
                 Text("powered on:").foregroundStyle(.secondary)
                 Link("Riff by rootless", destination: URL(string: "https://github.com/rootscripts/riff")!)

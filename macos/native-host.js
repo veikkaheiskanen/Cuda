@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const root=path.resolve(__dirname,'..');
 const send=value=>process.stdout.write(JSON.stringify(value)+'\n');
 console.log=()=>{};console.warn=()=>{};console.error=()=>{};
-let spotify,lyrics,port,closing=false,searchAbort;
+let spotify,lyrics,shelfSync,port,closing=false,searchAbort;
 const discord = new (require('./discord-presence').DiscordPresence)({emit: value => send({event: 'discord', value})});
 const serviceToken=crypto.randomBytes(32).toString('hex');
 function privateMedia(value) {
@@ -24,11 +24,17 @@ async function invoke(method,args) {
   lyrics=new (require('./lyrics-service').LyricsService)({directory,store:secureStore(Buffer.from(args.key,'base64')),fallback:async(title,artist)=>{const value=await invoke('api',{path:'/api/lyrics?'+new URLSearchParams({title,artist})});return value.lyrics||'';}});
   process.env.CUDA_NATIVE_SERVICE_TOKEN=serviceToken;
   const server=require('../server');server.setSpotifyProvider(spotify);port=await server.startServer(0);
+  shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send});
+  await shelfSync.configure().catch(()=>{});
   const migration=await require('./legacy-shelf').migrateShelf(directory);
   let shelf;try{shelf=privateMedia(JSON.parse(fs.readFileSync(path.join(directory,'native-shelf.json'),'utf8')));}catch{}
   return {port,status:spotify.status(),migration,shelf};
  }
  if(!port)throw new Error('Audio services are starting.');
+ if(method==='syncStatus')return shelfSync.status();
+ if(method==='syncConfigure')return shelfSync.configure(args);
+ if(method==='syncExchange')return shelfSync.exchange(args.records||[]);
+ if(method==='downloadOffline'){const downloaded=await invoke('api',args);return invoke('import',{paths:[downloaded.path]});}
  if(method==='discordConfigure')return discord.configure(args.enabled,args.clientID);
  if(method==='discordUpdate'){discord.update(args);return discord.status;}
  if(method==='lyricsStatus')return lyrics.status();
@@ -61,6 +67,6 @@ async function invoke(method,args) {
 }
 const lines=readline.createInterface({input:process.stdin});
 lines.on('line',async line=>{let message;try{if(line.length>2_000_000)throw new Error('Request too large');message=JSON.parse(line);const data=await invoke(message.method,message.args||{});send({id:message.id,data});}catch(error){if(message?.id)send({id:message.id,error:error.message});}});
-async function stop(){if(closing)return;closing=true;await discord.close();spotify?.close();await require('../server').stopServer().catch(()=>{});process.exit(0);}
+async function stop(){if(closing)return;closing=true;await discord.close();await shelfSync?.close();spotify?.close();await require('../server').stopServer().catch(()=>{});process.exit(0);}
 lines.on('close',stop);process.on('SIGTERM',stop);process.on('SIGINT',stop);
 module.exports={secureStore};

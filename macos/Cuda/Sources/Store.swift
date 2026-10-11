@@ -22,6 +22,7 @@ final class Store: ObservableObject {
         player.didPlay = { [weak self] track in self?.played(track) }
         return player
     }()
+    lazy var deviceSync = MacShelfSync(store: self)
     lazy var discord = DiscordPresenceController(runtime: runtime, player: player)
     private var starting = false
     private var queryToken = ""
@@ -41,10 +42,12 @@ final class Store: ObservableObject {
             if ProcessInfo.processInfo.environment["CUDA_NATIVE_DEMO"] == "1" { await demo() }
             ready = true
             discord.start()
+            deviceSync.start()
             recommendations = Array(Track.unique(spotify.tracks + state.favourites + state.local).prefix(20))
         } catch { message = error.localizedDescription }
     }
     private func receive(_ event: [String: Any]) {
+        if event["event"] as? String == "syncChanged" { Task { await deviceSync.sync() } }
         if event["event"] as? String == "discord", let value = event["value"] as? [String: Any] { discord.receive(value) }
         if event["event"] as? String == "spotify", let value = event["value"] as? [String: Any] {
             if value["event"] as? String == "library", let data = try? JSONSerialization.data(withJSONObject: value), let status = try? JSONDecoder().decode(SpotifyStatus.self, from: data) { spotify = status }
@@ -73,7 +76,7 @@ final class Store: ObservableObject {
             recommendations = response.tracks ?? []
         } catch { notice = "Recommendations are unavailable right now. Your Shelf is still ready to play." }
     }
-    func save() { do { try JSONEncoder().encode(state.saved()).write(to: file, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path) } catch { message = "Cuda could not save your Shelf. Check free disk space." } }
+    func save() { do { try JSONEncoder().encode(state.saved()).write(to: file, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path); deviceSync.changed() } catch { message = "Cuda could not save your Shelf. Check free disk space." } }
     func played(_ track: Track) {
         guard state.history.first?.sameRecording(track) != true else { return }
         state.history.removeAll { $0.sameRecording(track) }; state.history.insert(track, at: 0); state.history = Array(state.history.prefix(200)); save()
@@ -143,7 +146,7 @@ final class Store: ObservableObject {
         } catch { message = error.localizedDescription }
     }
     func download(_ track: Track) async {
-        do { let _: SearchResponse = try await runtime.api(path("/api/download", ["id": track.id, "url": track.url, "platform": track.platform, "title": track.title, "artist": track.artist])); notice = "Saved to Downloads." } catch { message = error.localizedDescription }
+        do { let data = try await runtime.call("downloadOffline", ["path": path("/api/download", ["id": track.id, "url": track.url, "platform": track.platform, "title": track.title, "artist": track.artist])]); state.local = try JSONDecoder().decode([Track].self, from: data); save(); notice = "Saved offline and ready to sync." } catch { message = error.localizedDescription }
     }
     private func demo() async {
         guard let fixture = Bundle.main.url(forResource: "preview", withExtension: "wav") else { return }

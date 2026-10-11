@@ -59,6 +59,18 @@ Open **Settings → Lyrics** to configure providers. Keys are stored in an authe
 
 Provider integrations are tested with original lyric fixtures and mock API responses. No real licensed keys have been supplied for live full-lyrics verification. Lyrics errors remain in the panel and never stop audio.
 
+## Device sync between Mac and iOS
+
+On the Mac, open **Settings → Device sync** and enable **Sync with iPhone and iPad**. On iOS, scan the Mac’s QR code with Camera and confirm pairing in Cuda, or paste the Mac’s pairing link in **Settings → Device sync**. No command line, server account, iCloud container, or Spotify developer key is needed for Shelf sync.
+
+Keep both devices on the same local network and leave Cuda open on the Mac. Bonjour finds the paired Mac again when its address changes. The connection uses TLS with the exact Mac certificate pinned by the pairing code; a random pairing key authenticates every request. The iOS pairing secret is stored in Keychain. Mac pairing settings are encrypted with the native Keychain key. Reset pairing on the Mac to invalidate old device keys.
+
+- **Favourites:** additions and removals sync both ways, including changes made offline.
+- **Playlists:** names, descriptions, songs, edits and deletions sync both ways. Existing Shelves merge on first pairing. Concurrent changes to the same playlist use the most recent revision; edits to separate playlists and favourites merge independently. Spotify selections and account credentials stay on each device.
+- **Offline songs:** new imported and Cuda-downloaded audio copies automatically both ways. SHA-256 verifies transfers and prevents duplicate files. Files are streamed to temporary storage before verification and import, with a 512 MB per-song limit. Removing a favourite or playlist never deletes an audio file from the other device. Turning off offline-song sync keeps Shelf sync enabled.
+
+iOS syncs on launch, Shelf changes, network reconnect and periodic checks while open. It also requests background processing; **iOS decides when those checks run**, so an app closed or suspended by the system cannot promise immediate detection. Unfinished transfers retry when reachable; previously downloaded songs play without a Mac connection. The Mac listener is off until enabled and exposes only authenticated Shelf sync and audio transfer, not account or desktop control endpoints.
+
 ## Checks and distribution
 
 ```sh

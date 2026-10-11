@@ -46,7 +46,11 @@ jobs:
       - name: Verify native Shelf and source identity
         run: |
           swiftc -module-cache-path macos/build/test-cache -swift-version 5 -parse-as-library macos/Cuda/Sources/Models.swift macos/Tests/ModelChecks.swift -o macos/build/model-checks
+          swiftc -parse-as-library macos/Cuda/Sources/Models.swift shared/SyncState.swift shared/Tests/SyncChecks.swift -o macos/build/sync-checks
+          macos/build/sync-checks
           macos/build/model-checks
+          swiftc -parse-as-library macos/Cuda/Sources/Models.swift shared/SyncState.swift shared/Tests/SyncChecks.swift -o macos/build/sync-checks
+          macos/build/sync-checks
       - name: Package native app
         run: ditto --noextattr --noqtn --norsrc -c -k --keepParent dist/Cuda.app dist/Cuda-native-mac-arm64.zip
       - uses: actions/upload-artifact@v4

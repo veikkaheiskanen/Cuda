@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['ios/**', 'scripts/ios-bridge.js', 'test/ios-bridge.test.js', '.github/workflows/ios.yml']
+    paths: ['ios/**', 'shared/**', 'macos/shelf-sync.js', 'test/shelf-sync.test.js', 'scripts/ios-bridge.js', 'test/ios-bridge.test.js', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['ios/**', 'scripts/ios-bridge.js', 'test/ios-bridge.test.js', '.github/workflows/ios.yml']
+    paths: ['ios/**', 'shared/**', 'macos/shelf-sync.js', 'test/shelf-sync.test.js', 'scripts/ios-bridge.js', 'test/ios-bridge.test.js', '.github/workflows/ios.yml']
 permissions:
   contents: read
 concurrency:
@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
       - name: Verify companion security and streaming
-        run: node --test test/ios-bridge.test.js
+        run: node --test test/ios-bridge.test.js test/shelf-sync.test.js
       - name: Generate native project
         run: |
           brew install xcodegen
@@ -37,8 +37,8 @@ jobs:
           mkdir -p build/export/Payload
           cp -R build/device/Build/Products/Release-iphoneos/Cuda.app build/export/Payload/
           cd build/export
-          /usr/bin/ditto -c -k --keepParent Payload Cuda-1.0.0-ios-unsigned.ipa
-          shasum -a 256 Cuda-1.0.0-ios-unsigned.ipa > SHA256SUMS.txt
+          /usr/bin/ditto -c -k --keepParent Payload Cuda-1.1.0-ios-unsigned.ipa
+          shasum -a 256 Cuda-1.1.0-ios-unsigned.ipa > SHA256SUMS.txt
       - name: Test native app on iPhone Simulator
         run: |
           cd ios

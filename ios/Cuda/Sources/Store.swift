@@ -15,6 +15,7 @@ final class Store: ObservableObject {
     let root: URL
     let audioRoot: URL
     let spotify = Spotify()
+    lazy var deviceSync = DeviceSync(store: self)
     lazy var player: Player = {
         let value = Player(spotify: spotify, localRoot: audioRoot) { [weak self] in self?.companion ?? Companion(address: "", token: "") }
         value.didPlay = { [weak self] track in self?.remember(track) }
@@ -28,9 +29,13 @@ final class Store: ObservableObject {
         audioRoot = root.appendingPathComponent("Audio", isDirectory: true)
         do { try FileManager.default.createDirectory(at: audioRoot, withIntermediateDirectories: true) } catch { message = error.localizedDescription }
         if let data = try? Data(contentsOf: root.appendingPathComponent("shelf.json")), let decoded = try? JSONDecoder().decode(CollectionState.self, from: data) { state = decoded }
+        // Migrate the initial iOS port’s full-hash IDs without losing saved references.
+        func migrate(_ track: Track) -> Track { var t = track; if t.platform == "local", t.id.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil { t.id = "local_" + String(t.id.prefix(12)) }; return t }
+        state.local = state.local.map(migrate); state.favourites = state.favourites.map(migrate); state.history = state.history.map(migrate)
+        state.playlists = state.playlists.map { var p = $0; p.tracks = p.tracks.map(migrate); if let id = p.spotifyID { p.id = "spotify-" + id }; return p }
     }
     func save() {
-        do { try JSONEncoder().encode(state).write(to: root.appendingPathComponent("shelf.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+        do { try JSONEncoder().encode(state).write(to: root.appendingPathComponent("shelf.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]); deviceSync.recordChange() }
         catch { message = "Your Shelf could not be saved. Free some device storage and try again." }
     }
     func remember(_ track: Track) {
@@ -108,12 +113,12 @@ final class Store: ObservableObject {
         for url in urls {
             let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
             do {
-                let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-                guard !state.local.contains(where: { $0.id == hash }) else { continue }
-                let file = hash + "." + url.pathExtension.lowercased()
+                let hash = try await DeviceSync.digest(url)
+                let id = "local_" + String(hash.prefix(12))
+                guard !state.local.contains(where: { $0.id == id }) else { continue }
+                let file = id + "." + url.pathExtension.lowercased()
                 let destination = audioRoot.appendingPathComponent(file)
-                try FileManager.default.copyItem(at: url, to: destination)
+                if !FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.copyItem(at: url, to: destination) }
                 let asset = AVURLAsset(url: destination)
                 let duration = try? await asset.load(.duration)
                 let metadata = (try? await asset.load(.commonMetadata)) ?? []
@@ -122,7 +127,7 @@ final class Store: ObservableObject {
                     if item.commonKey == .commonKeyTitle, let value = try? await item.load(.stringValue), !value.isEmpty { title = value }
                     if item.commonKey == .commonKeyArtist, let value = try? await item.load(.stringValue), !value.isEmpty { artist = value }
                 }
-                state.local.append(Track(id: hash, title: title, artist: artist, platform: "local", url: "", duration: duration?.seconds.isFinite == true ? duration?.seconds : nil, localFile: file)); save()
+                state.local.append(Track(id: id, title: title, artist: artist, platform: "local", url: "", duration: duration?.seconds.isFinite == true ? duration?.seconds : nil, localFile: file)); save()
             } catch { message = "Could not import \(url.lastPathComponent): \(error.localizedDescription)" }
         }
     }
