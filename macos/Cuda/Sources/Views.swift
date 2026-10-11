@@ -342,7 +342,7 @@ struct CompactPlayer: View {
                 Button(action: expand) { HStack(spacing: 10) { Cover(track: player.current).frame(width: 36, height: 36); VStack(alignment: .leading) { Text(player.current?.title ?? "").font(.headline).lineLimit(1); Text(player.current?.artist ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1) }.frame(maxWidth: .infinity, alignment: .leading) } }.buttonStyle(.plain).accessibilityLabel("Open now playing")
                 HStack { Spacer(); Transport(player: player, large: false); Spacer(); SourceMenu(player: player, iconOnly: true) }
             }
-        }.padding(12).glassEffect(.regular.tint(Color.accentColor.opacity(tint / 100)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }.padding(12).glassEffect(.regular.tint(Color(nsColor: .windowBackgroundColor).opacity(tint / 100)), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
     private func row(wide: Bool) -> some View {
         HStack(spacing: 16) {

@@ -8,4 +8,4 @@ Home shows recent songs, recommendations and playlists. Shelf groups favourites 
 
 System/Light/Dark, transparency and 0–100% glass tint persist. Accessibility settings are respected by system materials. Test desktop and narrow sizes in both themes with long text and empty/loaded states. Preserve imported audio/cache and Spotify playlist/account metadata. Spotify library authorization must be reconnected using native Keychain encryption; native Spotify playback credentials remain compatible.
 
-Controls inherit the system accent color, including native prominent buttons, sliders and active playback actions. Glass tint uses the same accent at the saved 0–100% strength. Do not override it with a fixed blue tint.
+Controls inherit the system accent color, including native prominent buttons, sliders and active playback actions. The player surface stays neutral: glass tint uses the system window background color at the saved 0–100% strength, dark in dark mode and light in light mode. Never fill the player surface with the accent color or override controls with fixed blue.

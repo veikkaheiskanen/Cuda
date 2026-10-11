@@ -20,4 +20,4 @@ The initial scan found the intrinsic-image clipping issue and short detail pane.
 
 ## System accent follow-up (1.0.2)
 
-The fixed blue root tint was removed. Verified against the Mac’s green system accent: Audio sliders, native selection, play/pause, volume and the 50% player glass tint all use green. Native inactive-window styling remains managed by macOS. Artwork colors remain the original artwork. No system preference was changed for this check.
+The fixed blue root tint was removed. Verified against the Mac’s green system accent: Audio sliders, native selection, play/pause and volume all use green. The player glass surface uses the neutral system window color, including at 50% tint. Native inactive-window styling remains managed by macOS. Artwork colors remain the original artwork. No system preference was changed for this check.
