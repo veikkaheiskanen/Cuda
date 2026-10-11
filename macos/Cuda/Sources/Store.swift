@@ -113,7 +113,7 @@ final class Store: ObservableObject {
                 let tracks: [Track] = try await runtime.spotify("playlistTracks", [choice.id])
                 imported.append(Playlist(id: "spotify-" + choice.id, name: choice.name, description: "From Spotify · " + (choice.owner ?? "Your playlists"), tracks: tracks, spotifyID: choice.id))
             }
-            state.playlists.removeAll { $0.spotifyID != nil }; state.playlists += imported; state.selectedSpotify = ids.sorted(); save(); await refresh(); return true
+            let importedIDs = Set(imported.map(\.id)); state.playlists.removeAll { importedIDs.contains($0.id) }; state.playlists += imported; state.selectedSpotify = ids.sorted(); save(); await refresh(); return true
         } catch { message = error.localizedDescription; return false }
     }
     func exportShelf() {

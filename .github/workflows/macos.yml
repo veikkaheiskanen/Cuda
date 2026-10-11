@@ -45,7 +45,7 @@ jobs:
           node macos/scripts/check-service.js dist/Cuda.app macos/build/stream-checks
       - name: Verify native Shelf and source identity
         run: |
-          swiftc -module-cache-path macos/build/test-cache -swift-version 5 -parse-as-library macos/Cuda/Sources/Models.swift macos/Tests/ModelChecks.swift -o macos/build/model-checks
+          swiftc -module-cache-path macos/build/test-cache -swift-version 5 -parse-as-library macos/Cuda/Sources/Models.swift macos/Cuda/Sources/SpotifyPlaylistLink.swift macos/Tests/ModelChecks.swift -o macos/build/model-checks
           swiftc -parse-as-library macos/Cuda/Sources/Models.swift shared/SyncState.swift shared/Tests/SyncChecks.swift -o macos/build/sync-checks
           macos/build/sync-checks
           macos/build/model-checks

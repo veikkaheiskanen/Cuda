@@ -21,6 +21,30 @@ final class CudaTests: XCTestCase {
         var local = track("local"); local.url = "file:///private/music"; local.localFile = "secret.wav"
         let safe = ShelfSyncJournal.clean(local); XCTAssertEqual(safe.url, ""); XCTAssertNil(safe.localFile)
     }
+    func testPinnedSyncExchangesShelfAndVerifiesOfflineAudio() async throws {
+        struct Fixture: Decodable { var link: String? }
+        guard let url = Bundle(for: CudaTests.self).url(forResource: "SyncFixture", withExtension: "json"),
+              let link = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url)).link else { throw XCTSkip("Start the isolated sync fixture to test a real TLS connection.") }
+        let pairing = try SyncPairing.parse(link), connection = SyncConnection(pairing)
+        defer { connection.session.invalidateAndCancel() }
+        let health = try await connection.health(); XCTAssertEqual(health, pairing.id)
+        let result = try await connection.exchange([])
+        XCTAssertTrue(result.records.contains { $0.key == "p:sync-fixture" })
+        let asset = try XCTUnwrap(result.assets.first)
+        let (temp, response) = try await connection.session.download(for: connection.request("/sync/files/" + asset.hash))
+        defer { try? FileManager.default.removeItem(at: temp) }
+        try connection.validate(response)
+        let digest = try await DeviceSync.digest(temp); XCTAssertEqual(digest, asset.hash)
+        var upload = try connection.request("/sync/files/" + asset.hash + "?ext=wav", method: "PUT")
+        upload.setValue(String(asset.size), forHTTPHeaderField: "Content-Length")
+        upload.setValue(try JSONEncoder().encode(asset.track).base64EncodedString(), forHTTPHeaderField: "X-Cuda-Track")
+        let (_, uploaded) = try await connection.session.upload(for: upload, fromFile: temp); try connection.validate(uploaded)
+        let changed = ShelfSyncRecord(key: "p:phone-fixture", clock: Int64(Date().timeIntervalSince1970 * 1000), device: "phone-fixture", deleted: false, playlist: Playlist(id: "phone-fixture", name: "Phone fixture", tracks: [asset.track]))
+        let merged = try await connection.exchange([changed]); XCTAssertTrue(merged.records.contains { $0.key == changed.key }); XCTAssertEqual(merged.assets.count, 1)
+        var wrong = pairing; wrong.fingerprint = String(repeating: "0", count: 64)
+        let rejected = SyncConnection(wrong); defer { rejected.session.invalidateAndCancel() }
+        do { _ = try await rejected.health(); XCTFail("Accepted an unpaired certificate") } catch { }
+    }
     func testCanonicalIdentityPreservesDifferentSources() {
         XCTAssertEqual(Track.unique([track(), track(), track("spotify")]).count, 2)
     }

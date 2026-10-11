@@ -65,7 +65,7 @@ struct SettingsView: View {
                         if store.syncing { ProgressView().controlSize(.small) }
                     }
                     Text(store.spotify.connected ? store.spotify.playbackConnected ? "Spotify library and playback are connected." : "Library connected. Connect playback to listen through Cuda’s native audio engine." : "Add your Spotify app Client ID. Register http://127.0.0.1:8898/callback as its redirect URI. Native playback has a separate sign-in.").font(.callout).foregroundStyle(.secondary)
-                    Button("Choose playlists", systemImage: "square.stack") { selecting = true }.disabled(!store.spotify.connected)
+                    Button("Import Spotify playlists", systemImage: "square.stack") { selecting = true }.disabled(!store.spotify.connected)
                     Link("Spotify app setup", destination: URL(string: "https://developer.spotify.com/dashboard")!)
                     if store.spotify.connected { Button("Disconnect Spotify", role: .destructive) { Task { do { if store.player.current?.platform == "spotify" { store.player.stop() }; store.spotify = try await store.runtime.spotify("disconnect") } catch { store.message = error.localizedDescription } } } }
                 }
@@ -111,16 +111,44 @@ struct DiscordSettings: View {
 struct SpotifyPicker: View {
     @ObservedObject var store: Store
     @State private var selected = Set<String>()
+    @State private var link = ""
+    @State private var client = ""
+    @State private var error: String?
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Choose playlists").font(.title2.bold())
-            Text("Add selected playlists to Shelf and use their songs to shape recommendations.").foregroundStyle(.secondary)
-            List(store.choices) { choice in Toggle(isOn: Binding(get: { selected.contains(choice.id) }, set: { if $0 { selected.insert(choice.id) } else { selected.remove(choice.id) } })) { VStack(alignment: .leading) { Text(choice.name); if let owner = choice.owner { Text(owner).font(.caption).foregroundStyle(.secondary) } } }.disabled(choice.accessible == false) }
-            HStack { if store.syncing { ProgressView().controlSize(.small) }; Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Sync") { Task { if await store.sync(selected) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(store.syncing) }
-        }.padding(24).frame(width: 480, height: 500).task { selected = Set(store.spotify.selected); await store.loadChoices() }
+            HStack { Text("Import from Spotify").font(.title2.bold()); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            if !store.spotify.connected {
+                Text("Connect your Spotify library to choose playlists or import a link. Playback sign-in is separate and optional for importing.").foregroundStyle(.secondary)
+                TextField("Spotify app Client ID", text: $client)
+                Button("Connect Spotify library") { Task { await store.connectSpotify(client); if store.spotify.connected { await store.loadChoices() } } }.disabled(store.syncing)
+                Link("Spotify app setup", destination: URL(string: "https://developer.spotify.com/dashboard")!)
+                Text("Register http://127.0.0.1:8898/callback as the redirect URI.").font(.callout).foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                Text("Import selected playlists to Shelf and use their songs for recommendations. Existing imports update without creating duplicates.").foregroundStyle(.secondary)
+                HStack { TextField("Spotify playlist link or URI", text: $link); Button("Import link") { Task { await importLink() } }.disabled(store.syncing || link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+                if let error { Text(error).font(.callout).foregroundStyle(.red) }
+                List(store.choices) { choice in
+                    Toggle(isOn: Binding(get: { selected.contains(choice.id) }, set: { if $0 { selected.insert(choice.id) } else { selected.remove(choice.id) } })) {
+                        VStack(alignment: .leading, spacing: 3) { Text(choice.name); Text(choice.accessible == false ? "Spotify restricts access to this playlist" : choice.owner ?? "Your playlist").font(.caption).foregroundStyle(.secondary) }
+                    }.disabled(choice.accessible == false)
+                }
+                Text("Spotify permits playlist contents for playlists you own or collaborate on. Imported playlists copy to a paired iPhone through Device sync.").font(.callout).foregroundStyle(.secondary)
+                HStack { Button("Refresh list", systemImage: "arrow.clockwise") { Task { await store.loadChoices() } }.disabled(store.syncing); Spacer(); Button("Import selected") { Task { if await store.sync(selected) { dismiss() } } }.buttonStyle(.borderedProminent).disabled(store.syncing || selected.isEmpty) }
+            }
+            if store.syncing { HStack { ProgressView().controlSize(.small); Text("Fetching Spotify playlists…").font(.callout).foregroundStyle(.secondary) } }
+        }.padding(24).frame(width: 510, height: 570).task { client = store.spotify.clientId; selected = Set(store.spotify.selected); if store.spotify.connected { await store.loadChoices() } }
+    }
+    private func importLink() async {
+        error = nil
+        guard let id = SpotifyPlaylistLink.id(link) else { error = "Paste a Spotify playlist link or spotify:playlist: URI."; return }
+        if store.choices.isEmpty { await store.loadChoices() }
+        guard let choice = store.choices.first(where: { $0.id == id }), choice.accessible != false else { error = "Choose a playlist you own or collaborate on using this Spotify account."; return }
+        if await store.sync(Set(store.spotify.selected).union([id])) { dismiss() }
     }
 }
+
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {

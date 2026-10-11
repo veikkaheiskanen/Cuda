@@ -39,6 +39,15 @@ jobs:
           cd build/export
           /usr/bin/ditto -c -k --keepParent Payload Cuda-1.1.0-ios-unsigned.ipa
           shasum -a 256 Cuda-1.1.0-ios-unsigned.ipa > SHA256SUMS.txt
+      - name: Start isolated Mac sync fixture
+        run: |
+          node ios/scripts/sync-fixture.js > ios/build/sync-fixture.log 2>&1 &
+          for attempt in {1..15}; do
+            if test -s ios/CudaTests/SyncFixture.json && python3 -c 'import json; assert json.load(open("ios/CudaTests/SyncFixture.json")).get("link")' 2>/dev/null; then break; fi
+            sleep 1
+          done
+          python3 -c 'import json; assert json.load(open("ios/CudaTests/SyncFixture.json")).get("link")'
+          cd ios && xcodegen generate
       - name: Test native app on iPhone Simulator
         run: |
           cd ios

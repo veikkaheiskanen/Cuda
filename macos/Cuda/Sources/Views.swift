@@ -259,15 +259,17 @@ struct ShelfView: View {
     @ObservedObject var player: Player
     var playlist: (String) -> Void
     @State private var creating = false
+    @State private var importingSpotify = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
-                HStack { Header(title: "Shelf", subtitle: "The music you keep close"); Button("New playlist", systemImage: "plus") { creating = true }.buttonStyle(.glass) }
+                HStack { Header(title: "Shelf", subtitle: "The music you keep close"); Menu("Add playlist", systemImage: "plus") { Button("New playlist", systemImage: "plus") { creating = true }; Button("Import from Spotify", systemImage: "square.and.arrow.down") { importingSpotify = true } }.menuStyle(.borderlessButton).fixedSize() }
                 VStack(alignment: .leading, spacing: 16) { Text("Favourites").font(.title2.bold()); if store.state.favourites.isEmpty { Text("Favourite a song to keep it here.").foregroundStyle(.secondary) } else { SongShelf(tracks: store.state.favourites, store: store, player: player) } }
                 PlaylistShelf(store: store, open: playlist)
                 VStack(alignment: .leading, spacing: 12) { HStack { Text("Imported music").font(.title2.bold()); Spacer(); Button("Import", systemImage: "plus") { store.importAudio() }.buttonStyle(.plain).foregroundStyle(.tint) }; if store.state.local.isEmpty { Text("Add audio files from your Mac.").foregroundStyle(.secondary) }; ForEach(store.state.local, id: \.key) { TrackRow(track: $0, queue: store.state.local, store: store, player: player) } }
             }.padding(28)
         }.sheet(isPresented: $creating) { PlaylistEditor { name, description in store.createPlaylist(name: name, description: description) } }
+        .sheet(isPresented: $importingSpotify) { SpotifyPicker(store: store) }
     }
 }
 struct SearchView: View {

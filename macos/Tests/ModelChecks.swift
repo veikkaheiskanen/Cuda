@@ -3,6 +3,12 @@ import Foundation
 @main
 struct ModelChecks {
     static func main() throws {
+        let playlistID = "37i9dQZF1DXcBWIGoYBM5M"
+        precondition(SpotifyPlaylistLink.id("https://open.spotify.com/playlist/" + playlistID + "?si=fixture") == playlistID)
+        precondition(SpotifyPlaylistLink.id("spotify:playlist:" + playlistID) == playlistID)
+        precondition(SpotifyPlaylistLink.id("https://open.spotify.com/intl-fi/playlist/" + playlistID) == playlistID)
+        precondition(SpotifyPlaylistLink.id("https://example.com/playlist/" + playlistID) == nil)
+        precondition(SpotifyPlaylistLink.id("https://open.spotify.com/track/" + playlistID) == nil)
         let original = Track(id: "video", title: "Song", artist: "Artist", platform: "youtube", url: "https://youtube.com/watch?v=video")
         let other = Track(id: "other", title: "Other", artist: "Artist", platform: "youtube")
         let selected = Track(id: "spotify-id", title: "Song", artist: "Artist", platform: "spotify", alternatives: [original])
