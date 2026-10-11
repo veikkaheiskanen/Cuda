@@ -20,4 +20,4 @@ cd "$build/ffmpeg-9.0.1"
   --enable-filter=aresample,aformat,anull --enable-swresample --enable-static --disable-shared
 make -j"$(sysctl -n hw.logicalcpu)"
 make install
-"$build/bin/ffmpeg" -hide_banner -protocols | rg '^  https?$'
+"$build/bin/ffmpeg" -hide_banner -protocols | /usr/bin/grep -E '^  https?$'
