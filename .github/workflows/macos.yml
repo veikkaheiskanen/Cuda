@@ -1,0 +1,43 @@
+name: Apple Silicon
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm run prepare:native
+      - name: Build native Mac app
+        run: npm run build:mac
+      - name: Verify signature and architecture
+        run: |
+          codesign --verify --deep --strict dist/mac-arm64/Cuda.app
+          lipo dist/mac-arm64/Cuda.app/Contents/MacOS/Cuda -verify_arch arm64
+          lipo dist/mac-arm64/Cuda.app/Contents/Resources/bin/bin/ffmpeg -verify_arch arm64
+          lipo dist/mac-arm64/Cuda.app/Contents/Resources/bin/bin/ffprobe -verify_arch arm64
+      - name: Verify packaged playback
+        run: npm run test:mac
+        env:
+          RIFF_GLASS_QA: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cuda-macos-arm64
+          path: |
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error

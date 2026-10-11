@@ -1,0 +1,152 @@
+{
+  "name": "riff",
+  "version": "41.0.7",
+  "main": "main.js",
+  "bin": {
+    "riff": "./cli.js"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder",
+    "release": "npm version patch && git push --follow-tags",
+    "release:minor": "npm version minor && git push --follow-tags",
+    "release:major": "npm version major && git push --follow-tags",
+    "dev": "electron .",
+    "build": "electron-builder --publish never",
+    "prepare:mac": "node scripts/prepare-macos-tools.js --arch arm64",
+    "build:mac": "electron-builder --mac --arm64 --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false",
+    "build:mac:signed": "electron-builder --mac --arm64 --publish never -c.forceCodeSigning=true",
+    "test:mac": "node scripts/smoke-macos.js",
+    "test:ui": "RIFF_GLASS_QA=1 node scripts/smoke-macos.js",
+    "prepare:native": "node scripts/build-native.js"
+  },
+  "keywords": [],
+  "author": "veikkaheiskanen",
+  "license": "MIT",
+  "description": "Cuda \u2014 a music player for Apple Silicon",
+  "devDependencies": {
+    "electron": "^41.7.1",
+    "electron-builder": "^26.15.3",
+    "@electron/osx-sign": "1.3.3"
+  },
+  "dependencies": {
+    "cfonts": "^3.3.1",
+    "discord-rpc": "^4.0.1",
+    "electron-updater": "^6.8.9",
+    "hls.js": "^1.7.1",
+    "tone": "^15.1.22"
+  },
+  "productName": "Cuda",
+  "homepage": "https://github.com/veikkaheiskanen/Cuda",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/veikkaheiskanen/Cuda.git"
+  },
+  "bugs": {
+    "url": "https://github.com/veikkaheiskanen/Cuda/issues"
+  },
+  "build": {
+    "appId": "io.github.rootscripts.riff",
+    "productName": "Cuda",
+    "artifactName": "cuda-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!.github/**",
+      "!dist/**",
+      "!bin/**",
+      "!*.md",
+      "!strip_comments.js",
+      "!.riff_progress.md",
+      "!package-lock.json",
+      "!scripts/**",
+      "!test/**",
+      "!build/**",
+      "!native/**",
+      "!work/**",
+      "!.impeccable/**",
+      "!docs/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "AudioVideo"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "veikkaheiskanen",
+        "repo": "Cuda",
+        "releaseType": "release"
+      }
+    ],
+    "beforePack": "scripts/before-pack.js",
+    "afterPack": "scripts/after-pack.js",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "minimumSystemVersion": "12.0",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extraResources": [
+        {
+          "from": "bin/darwin-${arch}",
+          "to": "bin",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "binaries": [
+        "Contents/Resources/bin/bin/ffmpeg",
+        "Contents/Resources/bin/bin/ffprobe",
+        "Contents/Resources/bin/bin/yt-dlp",
+        "Contents/Resources/bin/bin/riff-spotify-player",
+        "Contents/Resources/bin/bin/window-material.node"
+      ],
+      "darkModeSupport": true,
+      "sign": "scripts/sign-macos.js"
+    }
+  }
+}

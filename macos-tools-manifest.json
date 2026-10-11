@@ -1,0 +1,68 @@
+{
+  "ffmpegVersion": "9.0.1",
+  "ffmpegRelease": "v9.0.1-1",
+  "ffmpegBase": "https://github.com/dfloresc/ffmpeg-macos-builds/releases/download/v9.0.1-1",
+  "bundles": {
+    "arm64": {
+      "name": "ffmpeg-9.0.1-1-lgpl-macos-arm64.tar.xz",
+      "sha256": "d0ea5ea43a5adfa5d01d4137c9e5a61728b800a812f12917a26fd7af0c14c03a"
+    },
+    "x64": {
+      "name": "ffmpeg-9.0.1-1-lgpl-macos-x86_64.tar.xz",
+      "sha256": "d63ad731cbf1eb71c2055130fedfbd7e49edd60a9815ab763e72ba802c1ac666"
+    }
+  },
+  "sources": [
+    {
+      "name": "ffmpeg-9.0.1.tar.xz",
+      "sha256": "cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635"
+    },
+    {
+      "name": "lame-4.0.tar.gz",
+      "sha256": "3df5124d5ad3a98312ffd7ba6a9b36230e4f8a3e66d3ce0f425e336c32d216eb"
+    },
+    {
+      "name": "opus-1.6.1.tar.gz",
+      "sha256": "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
+    },
+    {
+      "name": "dav1d-1.5.4.tar.xz",
+      "sha256": "686616b7c69eb88d44459391ab25cac13b6647a3b288835c5784e71c1514a5c5"
+    },
+    {
+      "name": "libvpx-1.17.0.tar.gz",
+      "sha256": "1020f184046187baa2985dbde38e0691f49c44088bca7a1842b0236c6081dc0a"
+    },
+    {
+      "name": "libaom-3.15.0.tar.gz",
+      "sha256": "ea08c38ecc078bc85bb1b691020e52b06250f1a81fe7ca5b624629225081af96"
+    },
+    {
+      "name": "ffmpeg-build-scripts.tar.gz",
+      "url": "https://codeload.github.com/dfloresc/ffmpeg-macos-builds/tar.gz/e95a80ee4eeaf8bdb4f208ccbc1952eb79e0b08a",
+      "sha256": "cacd7523a1a7c7afb30d7541af5109768b187997ead6ef93367979587ff0b81b"
+    }
+  ],
+  "ytDlp": {
+    "version": "2026.08.19",
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos",
+    "sha256": "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202",
+    "archive": {
+      "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_macos.zip",
+      "sha256": "07e54b0865303c864006925913bce2604f8ee8cc6f18699bac9c309f9328a6d8",
+      "layout": "onedir-framework-v1"
+    }
+  },
+  "ytDlpLicenses": [
+    {
+      "name": "yt-dlp-LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.08.19/LICENSE",
+      "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+    },
+    {
+      "name": "yt-dlp-THIRD_PARTY_LICENSES.txt",
+      "url": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.08.19/THIRD_PARTY_LICENSES.txt",
+      "sha256": "472aefe951c7db35e1657c1d13fd337140511ed6f2b329205105ad441c5a02b7"
+    }
+  ]
+}

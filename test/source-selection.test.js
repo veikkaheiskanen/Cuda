@@ -1,0 +1,12 @@
+const test=require('node:test'),assert=require('node:assert/strict');
+const {selectSources}=require('../source-selection');
+const t=(platform,extra={})=>({id:platform,title:'Blue Water',artist:'Aurora',duration:200,platform,url:'https://example.test/'+platform,...extra});
+test('automatic selection prefers playable Spotify and retains provider fallbacks',()=>{const result=selectSources([t('youtube'),t('spotify'),t('ytmusic')],'Aurora Blue Water');assert.equal(result.length,1);assert.equal(result[0].platform,'spotify');assert.deepEqual(result[0].alternatives.map(t=>t.platform),['ytmusic','youtube']);assert.equal(result[0].autoSelected,true);});
+test('cached recordings win while unavailable Spotify is excluded',()=>{const result=selectSources([t('spotify',{playable:false}),t('youtube',{isCached:true}),t('soundcloud')]);assert.equal(result[0].platform,'youtube');assert.equal(result[0].alternatives.length,1);});
+test('different recordings and duration mismatches are not merged',()=>{assert.equal(selectSources([t('spotify'),t('youtube',{title:'Blue Water (live)'}),t('soundcloud',{duration:250})]).length,3);});
+test('explicit remix search ranks the requested version first',()=>{const result=selectSources([t('spotify'),t('youtube',{title:'Blue Water remix'})],'Aurora Blue Water remix');assert.equal(result[0].title,'Blue Water remix');});
+test('ISRC can merge a provider title variation without merging distinct ISRCs',()=>{const result=selectSources([t('spotify',{isrc:'FI123'}),t('youtube',{title:'Aurora - Blue Water',isrc:'FI123'}),t('soundcloud',{isrc:'FI999'})]);assert.equal(result.length,2);assert.equal(result[0].alternatives.length,1);});
+
+test('diacritics match ASCII artist names without merging short unrelated artist prefixes',()=>{assert.equal(selectSources([t('spotify',{artist:'Björk'}),t('youtube',{artist:'Bjork'})]).length,1);assert.equal(selectSources([t('spotify',{artist:'Al'}),t('youtube',{artist:'Alicia'})]).length,2);});
+test('collaboration artists and uploader prefixes match the primary artist',()=>{assert.equal(selectSources([t('spotify',{artist:'Aurora, Guest'}),t('ytmusic',{title:'Aurora - Blue Water',artist:'Aurora'})]).length,1);});
+test('unknown artist needs matching duration before source substitution',()=>{assert.equal(selectSources([t('spotify'),t('youtube',{artist:'Unknown artist',duration:0})]).length,2);assert.equal(selectSources([t('spotify'),t('youtube',{artist:'Unknown artist',duration:202})]).length,1);});

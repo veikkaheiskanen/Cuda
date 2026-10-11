@@ -1,0 +1,1 @@
+An Apple Silicon music player with a Liquid Glass-inspired interface, Spotify playback, YouTube and SoundCloud, a personal Shelf, and a native equalizer. Built by veikkaheiskanen.
