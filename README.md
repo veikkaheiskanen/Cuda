@@ -19,6 +19,7 @@ Built with help from ChatGPT
 - **Listen your way.** Auto races matching sources and uses the first ready stream. Prefer a particular service? Choose it from the player's source menu.
 - **A quieter player.** The compact bar keeps the song and essential controls in view. Open it for large artwork, seeking, shuffle, repeat, volume, and audio settings.
 - **Sound with room to adjust.** Equalizer, presets, and sound controls work with local and public audio, plus Cuda's native Spotify player.
+- **Listening, together.** Optional Discord Rich Presence shares the current song, artist, public artwork and playback status. [Set it up in Settings](macos/README.md#discord-rich-presence).
 - **Comfortable on your Mac.** Light, dark, and system appearance; adjustable window transparency; native traffic lights; keyboard shortcuts; and an adaptive layout for narrow windows.
 
 <p align="center">

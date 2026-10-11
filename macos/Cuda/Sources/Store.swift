@@ -22,6 +22,7 @@ final class Store: ObservableObject {
         player.didPlay = { [weak self] track in self?.played(track) }
         return player
     }()
+    lazy var discord = DiscordPresenceController(runtime: runtime, player: player)
     private var starting = false
     private var queryToken = ""
     private var likeTask: Task<Void, Never>?
@@ -39,10 +40,12 @@ final class Store: ObservableObject {
             state.local = try await runtime.api("/api/library")
             if ProcessInfo.processInfo.environment["CUDA_NATIVE_DEMO"] == "1" { await demo() }
             ready = true
+            discord.start()
             recommendations = Array(Track.unique(spotify.tracks + state.favourites + state.local).prefix(20))
         } catch { message = error.localizedDescription }
     }
     private func receive(_ event: [String: Any]) {
+        if event["event"] as? String == "discord", let value = event["value"] as? [String: Any] { discord.receive(value) }
         if event["event"] as? String == "spotify", let value = event["value"] as? [String: Any] {
             if value["event"] as? String == "library", let data = try? JSONSerialization.data(withJSONObject: value), let status = try? JSONDecoder().decode(SpotifyStatus.self, from: data) { spotify = status }
             else { player.spotifyEvent(value) }

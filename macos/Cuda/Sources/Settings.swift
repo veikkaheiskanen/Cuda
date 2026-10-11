@@ -22,7 +22,7 @@ struct AudioView: View {
                 Section("Playback") {
                     effectSlider("Speed", value: $player.effects.speed, range: 0.5...2, suffix: "×")
                     effectSlider("Pitch", value: $player.effects.pitch, range: -12...12, suffix: "st").disabled(!fullEffects)
-                    Slider(value: $player.volume, in: 0...1) { Text("Volume") }
+                    effectSlider("Volume", value: Binding(get: { Double(player.volume) * 100 }, set: { player.volume = Float($0 / 100) }), range: 0...100, suffix: "%")
                 }
                 Section("Effects") {
                     effectSlider("Reverb", value: $player.effects.reverb, range: 0...100, suffix: "%").disabled(!fullEffects)
@@ -75,10 +75,11 @@ struct SettingsView: View {
                     Button("Save listening history connection") { Task { do { store.spotify = try await store.runtime.spotify("lastfm", [username, apiKey]); store.notice = "Last.fm connection saved." } catch { store.message = error.localizedDescription } } }
                     Text("Adds your Last.fm taste to Spotify’s weekly discovery picks.").font(.callout).foregroundStyle(.secondary)
                 }
+                DiscordSettings(presence: store.discord)
                 Section("Your Shelf") { Button("Export Shelf backup", systemImage: "square.and.arrow.up") { store.exportShelf() }; Button("Import Shelf backup", systemImage: "square.and.arrow.down") { store.importShelf() } }
                 Section("About") {
                     Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1")
+                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.3")
                     Button("About Cuda") { about = true }
                 }
             }.formStyle(.grouped).scrollContentBackground(.hidden)
@@ -86,6 +87,23 @@ struct SettingsView: View {
             .onChange(of: theme) { _, value in Appearance.apply(value) }
             .sheet(isPresented: $selecting) { SpotifyPicker(store: store) }
             .sheet(isPresented: $about) { AboutView() }
+    }
+}
+struct DiscordSettings: View {
+    @ObservedObject var presence: DiscordPresenceController
+    @State private var applicationID = ""
+    var body: some View {
+        Section("Discord") {
+            Toggle("Share listening activity", isOn: $presence.enabled).disabled(!presence.validID)
+            TextField("Application ID", text: $applicationID)
+            HStack {
+                Button("Save Application ID") { presence.saveApplicationID(applicationID) }
+                Link("Discord Developer Portal", destination: URL(string: "https://discord.com/developers/applications")!)
+            }
+            Text("Create an application named Cuda in the Developer Portal, then copy its Application ID here. No bot or account token is needed.").font(.callout).foregroundStyle(.secondary)
+            Text("When enabled, your song, artist and public artwork appear on your Discord profile. Keep the Discord desktop app open and activity sharing enabled.").font(.callout).foregroundStyle(.secondary)
+            LabeledContent("Status", value: presence.status)
+        }.onAppear { applicationID = presence.applicationID }
     }
 }
 struct SpotifyPicker: View {

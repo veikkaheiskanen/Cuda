@@ -5,6 +5,7 @@ const root=path.resolve(__dirname,'..');
 const send=value=>process.stdout.write(JSON.stringify(value)+'\n');
 console.log=()=>{};console.warn=()=>{};console.error=()=>{};
 let spotify,port,closing=false,searchAbort;
+const discord = new (require('./discord-presence').DiscordPresence)({emit: value => send({event: 'discord', value})});
 const serviceToken=crypto.randomBytes(32).toString('hex');
 function privateMedia(value) {
  if(typeof value==='string'&&value.startsWith('http://127.0.0.1:')){const u=new URL(value);if(u.port===String(port)||/^\/(api\/(thumbnail|local-thumbnail|local-track|library-file|audio-proxy)|thumbs?\/)/.test(u.pathname)){u.port=String(port);u.searchParams.set('native_token',serviceToken);return u.href;}}
@@ -27,6 +28,8 @@ async function invoke(method,args) {
   return {port,status:spotify.status(),migration,shelf};
  }
  if(!port)throw new Error('Audio services are starting.');
+ if(method==='discordConfigure')return discord.configure(args.enabled,args.clientID);
+ if(method==='discordUpdate'){discord.update(args);return discord.status;}
  if(method==='spotify')return spotify.invoke(args.operation,args.values||[]);
  if(method==='search') {
   searchAbort?.abort();searchAbort=new AbortController();const controller=searchAbort;
@@ -53,6 +56,6 @@ async function invoke(method,args) {
 }
 const lines=readline.createInterface({input:process.stdin});
 lines.on('line',async line=>{let message;try{if(line.length>2_000_000)throw new Error('Request too large');message=JSON.parse(line);const data=await invoke(message.method,message.args||{});send({id:message.id,data});}catch(error){if(message?.id)send({id:message.id,error:error.message});}});
-async function stop(){if(closing)return;closing=true;spotify?.close();await require('../server').stopServer().catch(()=>{});process.exit(0);}
+async function stop(){if(closing)return;closing=true;await discord.close();spotify?.close();await require('../server').stopServer().catch(()=>{});process.exit(0);}
 lines.on('close',stop);process.on('SIGTERM',stop);process.on('SIGINT',stop);
 module.exports={secureStore};

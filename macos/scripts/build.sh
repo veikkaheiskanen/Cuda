@@ -38,7 +38,7 @@ if [[ -f "$node_license" ]]; then cp "$node_license" "$app/Contents/Resources/ru
 for file in server.js platform.js tools.js tool-processes.js macos-tools.js macos-tools-manifest.json playback-resolver.js source-selection.js search-broker.js stream-utils.js spotify-service.js audio-settings.js library-import.js; do
   cp "$root/$file" "$app/Contents/Resources/backend/"
 done
-cp "$root/macos/native-host.js" "$root/macos/legacy-shelf.js" "$root/macos/secure-store.js" "$app/Contents/Resources/backend/macos/"
+cp "$root/macos/native-host.js" "$root/macos/legacy-shelf.js" "$root/macos/secure-store.js" "$root/macos/discord-presence.js" "$app/Contents/Resources/backend/macos/"
 ditto --noextattr --noqtn --norsrc "$root/macos/node_modules" "$app/Contents/Resources/backend/macos/node_modules"
 # Keep only this Mac's LevelDB build. Other platform prebuilds are not shipped.
 for directory in "$app/Contents/Resources/backend/macos/node_modules/classic-level/prebuilds"/*; do

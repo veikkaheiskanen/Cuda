@@ -35,7 +35,17 @@ All artwork is center-cropped inside a fixed square frame, including wide video 
 
 Buttons, sliders and active playback controls follow the accent color selected in macOS System Settings → Appearance. The player glass stays neutral and follows light/dark window colors. Light, dark, and system appearance, transparency, and a 0–100% glass tint persist. Settings and Audio forms share the window material; the transparency switch updates the native window immediately. macOS Reduce Transparency is respected by native materials. `Command-F` opens search, `Command-O` imports music, `Command-Shift-P` opens the player, and `Command-Shift-M` opens the mini player. Space toggles playback while ordinary text entry retains its spaces.
 
-This first native release ports the central music workflow. The legacy Discord integration, translated/synced lyric view, and updater UI are not included. Updates are available through GitHub releases. Provider availability and resolution times still depend on the network and service.
+This first native release ports the central music workflow. The translated/synced lyric view and updater UI are not included. Updates are available through GitHub releases. Provider availability and resolution times still depend on the network and service.
+
+## Discord Rich Presence
+
+Open **Settings → Discord**. Create an application named **Cuda** at the [Discord Developer Portal](https://discord.com/developers/applications), copy its **Application ID** from General Information, paste it into Cuda, and choose **Save Application ID**. Enable **Share listening activity**. No bot, account token, client secret, or additional library is needed.
+
+Keep the Discord **desktop app** open and enable activity sharing in Discord's Activity Privacy settings. Cuda connects through Discord's local IPC socket and reconnects when Discord reopens. The name shown by Discord comes from the application you created. Status in Cuda tells you whether the connection succeeded.
+
+Rich Presence includes the current song and artist, public cover artwork when available, playback timing, and a service link for Spotify, YouTube, YouTube Music or SoundCloud. Pausing removes the running timer and shows **Paused**; seeking and playback speed changes update the timing. Loading or failed playback clears the activity. Turning sharing off or quitting Cuda clears it. Local file paths, loopback URLs and account tokens are never shared. Sharing is off by default and has no effect on audio when Discord is unavailable.
+
+The [Discord IPC integration guide](https://github.com/discord/discord-rpc/blob/master/documentation/hard-mode.md) describes the framed socket transport and `SET_ACTIVITY` command used here. Tests exercise that transport with a local mock, without publishing to a Discord account.
 
 ## Checks and distribution
 
