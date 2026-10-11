@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/cuda-native-home.png" alt="Cuda for Mac — a calm home for your music" width="100%">
+  <img src="docs/images/cuda-native-promo-hero.png" alt="Cuda for Mac — a calm home for your music" width="100%">
 </p>
 
 # Cuda
@@ -22,17 +22,26 @@ Built with help from ChatGPT
 - **Comfortable on your Mac.** Light, dark, and system appearance; adjustable window transparency; native traffic lights; keyboard shortcuts; and an adaptive layout for narrow windows.
 
 <p align="center">
-  <img src="docs/images/cuda-native-shelf.png" alt="Cuda native Shelf in dark appearance with favourites and playlists" width="100%">
+  <img src="docs/images/cuda-native-promo-shelf.png" alt="Cuda native Shelf — favourites and playlists, kept close" width="100%">
 </p>
 
-<table>
-  <tr>
-    <td width="68%"><img src="docs/images/cuda-native-player.png" alt="Cuda's expanded player in dark appearance"></td>
-    <td width="32%"><img src="docs/images/cuda-native-player-narrow.png" alt="Cuda's adaptive player in a narrow window"></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/images/cuda-native-promo-player.png" alt="Cuda's native expanded player in dark appearance" width="100%">
+</p>
 
-*Screenshots show the actual Mac app with an illustrative Cuda Sessions library and original demo artwork. The narrow layout is a resized desktop window.*
+*Promo images combine actual native Mac app screens with an illustrative Cuda Sessions library, original demo artwork, and a generated glass background. [Image details](docs/promo/README.md).*
+
+<details>
+<summary>View the original native app screenshots</summary>
+
+![Home](docs/images/cuda-native-home.png)
+![Shelf](docs/images/cuda-native-shelf.png)
+![Expanded player](docs/images/cuda-native-player.png)
+![Narrow desktop player](docs/images/cuda-native-player-narrow.png)
+
+The narrow layout is a resized desktop window.
+
+</details>
 
 ## Build for Mac
 

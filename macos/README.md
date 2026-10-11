@@ -60,7 +60,7 @@ macos/build/model-checks
 
 Run audio checks outside a restrictive shell sandbox so Apple's audio components can initialize. `StreamChecks.swift` verifies HTTP stream decoding, pause/resume, effects, seek, and decoder shutdown against a local fixture service. Node regression tests cover catalog operations, source selection/failover, HLS proxy headers, ranges, encryption, and Unicode Shelf migration. CI builds the same native arm64 app on macOS 26.
 
-The provided build is ad-hoc signed, not Apple-notarized. A downloaded build may require **Open Anyway** in macOS Privacy & Security. Installing it does not erase the legacy profile; the previous Electron release remains available for rollback.
+The provided build is ad-hoc signed, not Apple-notarized. A downloaded build may require **Open Anyway** in macOS Privacy & Security. Installing it does not erase the legacy profile; the legacy source remains in the repository, and previous app backups can be retained locally. The Electron GitHub release has been retired.
 
 ## Design and credits
 
