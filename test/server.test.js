@@ -86,6 +86,11 @@ test('local library and cache work on the actual bound server port', { timeout: 
       assert.equal(await(await fetch(first.proxyUrl)).text(),'audio');assert.equal(await(await fetch(first.proxyBase+encodeURIComponent(target+'/segment'))).text(),'audio');assert.equal(seen,2);
       const cached=await(await fetch(base+'/api/stream-info?'+params)).json();assert.equal(cached.proxyBase,first.proxyBase);assert.equal(fs.readFileSync(count,'utf8'),'x');
       const refreshed=await(await fetch(base+'/api/stream-info?'+params+'&refresh=1')).json();assert.notEqual(refreshed.proxyBase,first.proxyBase);assert.equal(fs.readFileSync(count,'utf8'),'xx');
+      // Mobile requests use a separate codec cache and skip unsupported Opus files.
+      fs.writeFileSync(path.join(platform.CACHE_DIR,'header-test.opus'),Buffer.alloc(65536));
+      const mobile=await(await fetch(base+'/api/stream-info?'+params+'&mobile=1')).json();
+      assert.equal(mobile.isLocal,false);assert.notEqual(mobile.proxyBase,refreshed.proxyBase);
+      assert.equal(fs.readFileSync(count,'utf8'),'xxx');
       assert.equal((await fetch(base+'/api/audio-proxy?stream=expired&url='+encodeURIComponent(target))).status,410);
       const restricted=await fetch(base+'/api/stream-info?id=protected-test&platform=soundcloud&url=https%3A%2F%2Fprovider.example%2Fprotected');assert.equal(restricted.status,502);assert.match((await restricted.json()).error,/protected by SoundCloud/);
     }finally{if(previous===undefined)delete process.env.RIFF_YTDLP;else process.env.RIFF_YTDLP=previous;platform.clearBinaryCache();await new Promise(resolve=>origin.close(resolve));}

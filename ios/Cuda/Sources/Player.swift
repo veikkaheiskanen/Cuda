@@ -72,8 +72,10 @@ final class Player: ObservableObject {
                 if (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.audio.pause() }
             }
         }
-        spotify.onState = { [weak self] track, playing, position in
+        spotify.onState = { [weak self] incoming, playing, position in
             guard let self, self.current == nil || self.current?.platform == "spotify" else { return }
+            var track = incoming
+            track.thumbnail = self.current?.key == track.key ? self.current?.thumbnail : self.queue.first(where: { $0.key == track.key })?.thumbnail
             self.current = track; self.playing = playing; self.loading = false; self.position = position; self.duration = track.duration ?? 0
             if playing { self.didPlay?(track) }
         }

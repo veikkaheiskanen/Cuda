@@ -17,8 +17,7 @@ targets:
   Cuda:
     type: application
     platform: iOS
-    sources: [Cuda/Sources]
-    resources: [Cuda/Resources]
+    sources: [Cuda/Sources, Cuda/Resources]
     dependencies:
       - package: SpotifyiOS
     settings:

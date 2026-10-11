@@ -1644,7 +1644,7 @@ const server = http.createServer(async (req, res) => {
         const native=[original,...known].find(t=>t.playable!==false&&t.platform==='spotify'&&usable(t)&&!excluded.has(t.platform+':'+t.id));
         if(native){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:{...native,alternatives:[original,...known].filter(t=>t!==native)}}));}
         const resolve=async t=>{
-          if(t.platform==='spotify'){if(!status.playbackConnected)throw new Error('Connect Spotify playback first.');return {native:true};}
+          if(t.platform==='spotify'){if(payload.mobile)throw new Error('Spotify plays through the iOS SDK.');if(!status.playbackConnected)throw new Error('Connect Spotify playback first.');return {native:true};}
           if(!['youtube','ytmusic','soundcloud'].includes(t.platform))throw new Error('Unsupported audio source.');
           if(!/^https?:\/\//.test(t.url))throw new Error('Invalid source URL.');
           const file=await findCachedFile(t.id);

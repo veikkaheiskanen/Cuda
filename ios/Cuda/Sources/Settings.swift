@@ -22,7 +22,7 @@ struct SettingsView: View {
                 }
                 Text(spotify.message).font(.subheadline).foregroundStyle(.secondary)
                 Button("Choose playlists", systemImage: "square.stack") { selecting = true }.disabled(!spotify.hasToken)
-                if spotify.hasToken { Button("Disconnect Spotify", role: .destructive) { spotify.disconnect() } }
+                if spotify.hasToken { Button("Disconnect Spotify", role: .destructive) { spotify.disconnect(); if store.player.current?.platform == "spotify" { store.player.playing = false; store.player.loading = false } } }
             } header: { Text("Spotify") } footer: {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Install Spotify and sign in on this device. Register an iOS app with bundle ID com.veikkaheiskanen.Cuda and redirect URI cuda-spotify://callback. Add its Client ID above. On-demand playback requires Premium.")

@@ -9,6 +9,7 @@ struct Track: Codable, Identifiable, Equatable, Hashable {
     var duration: Double?
     var thumbnail: String?
     var localFile: String?
+    var alternatives: [Track]?
     var key: String { platform + ":" + id }
     var sourceName: String {
         switch platform { case "local": return "On this device"; case "spotify": return "Spotify"

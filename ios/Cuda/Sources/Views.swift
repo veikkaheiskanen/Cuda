@@ -61,7 +61,7 @@ struct Cover: View {
             if let image { Image(uiImage: image).resizable().scaledToFill() }
             else if let raw = track?.thumbnail, raw.hasPrefix("demo-") {
                 Image(raw).resizable().scaledToFill()
-            } else if let raw = track?.thumbnail, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? "") {
+            } else if let raw = track?.thumbnail, let url = URL(string: raw), url.scheme == "https" {
                 AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary) }
             } else { Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary) }
         }.aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
@@ -286,6 +286,8 @@ struct MiniPlayer: View {
                 else { Image(systemName: player.playing ? "pause.fill" : "play.fill").font(.title3).frame(width: 44, height: 44) }
             }.accessibilityLabel(player.playing ? "Pause" : "Play").accessibilityIdentifier("mini-play")
             Button { player.next() } label: { Image(systemName: "forward.end.fill").frame(width: 44, height: 44) }.accessibilityLabel("Next song")
+            Menu { ForEach(Source.allCases) { source in Button(source.label) { player.changeSource(source) } } } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }
+                .accessibilityLabel("Audio source, \(player.source.label)").disabled(player.current?.platform == "local")
         }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
