@@ -8,6 +8,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     @Published var message = "Connect the Spotify app on this device."
     @Published var artwork: UIImage?
     var onState: ((Track, Bool, Double) -> Void)?
+    var onFailure: ((String) -> Void)?
     var onAuthorized: (() -> Void)?
     private var remote: SPTAppRemote?
     private var configuredID = ""
@@ -40,7 +41,9 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         acceptsState = true; authorizing = true; pendingURI = uri.isEmpty ? nil : uri
         message = "Finish connecting in Spotify…"
         remote.authorizeAndPlayURI(uri, asRadio: false, additionalScopes: ["playlist-read-private", "playlist-read-collaborative", "user-library-read", "user-library-modify"]) { [weak self] success in
-            if !success { self?.message = "Spotify could not open. Install Spotify and retry."; self?.authorizing = false }
+            Task { @MainActor in
+                if !success { self?.message = "Spotify could not open. Install Spotify and retry."; self?.authorizing = false; self?.onFailure?(self?.message ?? "Spotify could not open.") }
+            }
         }
     }
     func handle(_ url: URL) {
@@ -50,7 +53,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         if let token = parameters?[SPTAppRemoteAccessTokenKey] {
             accessToken = token; remote.connectionParameters.accessToken = token
             remote.connect(); onAuthorized?()
-        } else { message = parameters?[SPTAppRemoteErrorDescriptionKey] ?? "Spotify sign-in was cancelled." }
+        } else { message = parameters?[SPTAppRemoteErrorDescriptionKey] ?? "Spotify sign-in was cancelled."; onFailure?(message) }
     }
     func foreground() { if !accessToken.isEmpty, acceptsState, remote?.isConnected == false { remote?.connect() } }
     func background() { remote?.disconnect() }
@@ -69,7 +72,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     func seek(_ seconds: Double) { remote?.playerAPI?.seek(toPosition: Int(seconds * 1000), callback: report) }
     func next() { remote?.playerAPI?.skip(toNext: report) }
     func previous() { remote?.playerAPI?.skip(toPrevious: report) }
-    private var report: SPTAppRemoteCallback { { [weak self] _, error in if let error { self?.message = error.localizedDescription } } }
+    private var report: SPTAppRemoteCallback { { [weak self] _, error in if let error { self?.message = error.localizedDescription; self?.onFailure?(error.localizedDescription) } } }
     nonisolated func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         Task { @MainActor in self.established(appRemote) }
     }
@@ -84,6 +87,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         Task { @MainActor in
             guard appRemote === self.remote else { return }
             self.connected = false; self.message = "Spotify connection stopped. Tap Connect Spotify to resume."
+            self.onFailure?(self.message)
         }
     }
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {

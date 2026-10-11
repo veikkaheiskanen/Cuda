@@ -79,6 +79,14 @@ final class Player: ObservableObject {
             self.current = track; self.playing = playing; self.loading = false; self.position = position; self.duration = track.duration ?? 0
             if playing { self.didPlay?(track) }
         }
+        spotify.onFailure = { [weak self] message in
+            guard let self, let track = self.selectedOriginal, self.current?.platform == "spotify" else { return }
+            self.playing = false
+            let companion = self.companion()
+            if self.source == .auto, Companion.validAddress(companion.address), !companion.token.isEmpty, !self.excluded.contains(track.key) {
+                self.excluded.insert(track.key); self.loading = true; self.load(track, generation: self.generation)
+            } else { self.loading = false; self.error = message }
+        }
         let commands = MPRemoteCommandCenter.shared()
         commands.playCommand.addTarget { [weak self] _ in Task { @MainActor in if self?.playing == false { self?.toggle() } }; return .success }
         commands.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in if self?.playing == true { self?.toggle() } }; return .success }
@@ -100,7 +108,7 @@ final class Player: ObservableObject {
     private func load(_ track: Track, generation key: UUID) {
         task = Task {
             do {
-                if source == .spotify || (track.platform == "spotify" && source == .auto) {
+                if source == .spotify || (track.platform == "spotify" && source == .auto && !excluded.contains(track.key)) {
                     var selected = track
                     if track.platform != "spotify" {
                         let candidates = try await spotify.search(track.artist + " " + track.title)
@@ -112,7 +120,14 @@ final class Player: ObservableObject {
                         selected = match
                     }
                     try Task.checkCancellation(); guard generation == key else { return }
-                    current = selected; try spotify.play(selected); loading = false
+                    current = selected
+                    do { try spotify.play(selected) }
+                    catch {
+                        let companion = self.companion()
+                        guard source == .auto, Companion.validAddress(companion.address), !companion.token.isEmpty else { throw error }
+                        excluded.insert(track.key); load(track, generation: key); return
+                    }
+                    loading = false
                     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
                     return
                 }

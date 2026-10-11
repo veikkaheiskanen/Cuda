@@ -14,6 +14,7 @@ struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var page = Page.home
     @State private var expanded = false
+    @State private var playerDetent: PresentationDetent = .large
     var body: some View {
         Group {
             if sizeClass == .regular {
@@ -31,7 +32,20 @@ struct RootView: View {
                 }
             }
         }
-        .sheet(isPresented: $expanded) { NowPlaying(store: store, player: player).presentationDetents([.medium, .large]).presentationDragIndicator(.visible) }
+        .task {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["CUDA_DEMO"] == "1" {
+                if ProcessInfo.processInfo.environment["CUDA_PREVIEW_PLAYER"] == "1", let track = store.state.history.first {
+                    player.play(track, in: store.state.history)
+                    expanded = true
+                }
+                try? await Task.sleep(for: .seconds(2))
+                let marker = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("preview-ready")
+                try? Data("ready".utf8).write(to: marker)
+            }
+            #endif
+        }
+        .sheet(isPresented: $expanded) { NowPlaying(store: store, player: player).presentationDetents([.medium, .large], selection: $playerDetent).presentationDragIndicator(.visible) }
         .alert("Cuda", isPresented: Binding(get: { store.message != nil || player.error != nil }, set: { if !$0 { store.message = nil; player.error = nil } })) {
             Button("OK", role: .cancel) { store.message = nil; player.error = nil }
         } message: { Text(store.message ?? player.error ?? "") }

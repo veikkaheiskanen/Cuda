@@ -62,6 +62,13 @@ jobs:
             ios/build/export/*.ipa
             ios/build/export/SHA256SUMS.txt
             ios/build/screenshots/*.png
+          if-no-files-found: error
+      - name: Upload native test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cuda-iOS-tests
+          path: |
             ios/build/TestResults.xcresult
             ios/build-device.log
             ios/build-simulator.log

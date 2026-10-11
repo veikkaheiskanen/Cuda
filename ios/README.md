@@ -11,7 +11,7 @@ A native SwiftUI iPhone and iPad companion to Cuda. Home, Shelf, search, favouri
 | Spotify | Official Spotify iOS SDK 5.0.1. Spotify must be installed and signed in on the same device; Spotify renders the audio. On-demand playback requires Premium. |
 | Spotify playlists | Choose playlists in Settings; fetch paginated contents into Shelf and use them as recommendation taste. |
 | YouTube / YouTube Music / SoundCloud | Authenticated Mac companion resolves and proxies playable audio using Cuda's existing extractor and matching-source resolver. Mac must remain awake and reachable. |
-| Auto source | Races matching public sources through the companion, then retries failed playback on alternatives. Spotify tracks use the iOS SDK directly. |
+| Auto source | Races matching public sources through the companion, then retries failed playback on alternatives. Spotify tracks use the iOS SDK first, falling back to matching public sources when Spotify fails and the Mac is paired. |
 | Shelf | Persistent local favourites and editable playlists with descriptions, canonical duplicate prevention, queue actions, and deletion confirmation. |
 | Recommendations | Uses favourite, playlist and recent artists, filters recently played tracks, and merges connected catalog results. |
 
