@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..'),bin=path.join(root,'bin','darwin-arm64',
 if(process.platform!=='darwin'||process.arch!=='arm64')throw new Error('Build native components on an Apple Silicon Mac.');
 fs.mkdirSync(bin,{recursive:true});
 function run(command,args){const result=spawnSync(command,args,{cwd:root,stdio:'inherit',env:process.env});if(result.error)throw result.error;if(result.status!==0)throw new Error(command+' failed');}
-run('clang',['-shared','-fobjc-arc','-undefined','dynamic_lookup','-I'+path.join(root,'native','include'),'-framework','AppKit','-framework','QuartzCore','-mmacosx-version-min=12.0','native/window-material.m','-o',path.join(bin,'window-material.node')]);
+if(!process.argv.includes('--spotify-only'))run('clang',['-shared','-fobjc-arc','-undefined','dynamic_lookup','-I'+path.join(root,'native','include'),'-framework','AppKit','-framework','QuartzCore','-mmacosx-version-min=12.0','native/window-material.m','-o',path.join(bin,'window-material.node')]);
 run(process.env.CARGO || 'cargo',['build','--release','--locked','--manifest-path','native/spotify-player/Cargo.toml']);
 fs.copyFileSync(path.join(process.env.CARGO_TARGET_DIR || path.join(root,'native/spotify-player/target'),'release/riff-spotify-player'),path.join(bin,'riff-spotify-player'));fs.chmodSync(path.join(bin,'riff-spotify-player'),0o755);
 

@@ -52,6 +52,19 @@ test('local library and cache work on the actual bound server port', { timeout: 
   fs.writeFileSync(path.join(platform.CACHE_DIR, 'cached-track.mp3'), cachedBytes);
   fs.writeFileSync(path.join(platform.THUMBNAILS_DIR, 'cached-track.jpg'), Buffer.alloc(1024, 0x24));
 
+  await t.test('native Apple playback respects failed cached sources and keeps native Spotify eligible', async () => {
+    const server = require('../server');
+    const original = {id:'cached-track', title:'Blue Water', artist:'Aurora', platform:'soundcloud',url:'https://soundcloud.com/artist/song',duration:200};
+    const alternative = {...original,id:'A'.repeat(22),platform:'spotify',url:'spotify:track:'+'A'.repeat(22)};
+    server.setSpotifyProvider({status:()=>({playbackConnected:true,tracks:[alternative]})});
+    try {
+      const cached = await (await post('/api/playback-source',{track:original,nativeApple:true})).json();
+      assert.equal(cached.track.platform,'soundcloud');assert.equal(cached.stream.isLocal,true);
+      const recovered = await (await post('/api/playback-source',{track:original,nativeApple:true,exclude:['soundcloud:cached-track']})).json();
+      assert.equal(recovered.track.platform,'spotify');assert.equal(recovered.stream,undefined);
+    } finally { server.setSpotifyProvider(null); }
+  });
+
   await t.test('audio proxy follows redirects, preserves seeking and permits isolated renderer playback', async () => {
     const origin = http.createServer((req, res) => {
       if (req.url === '/redirect') { res.writeHead(302, { Location: '/audio' }); return res.end(); }

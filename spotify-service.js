@@ -37,9 +37,10 @@ class NativePlayer {
   }
   close(){const child=this.child;this.child=null;for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(new Error('Spotify playback stopped.'));}this.pending.clear();if(child)child.kill();}
 }
-function createSpotify({directory,safeStorage,openExternal,emit=()=>{},fetchImpl=fetch,binary,now=Date.now}) {
+function createSpotify({directory,safeStorage,openExternal,emit=()=>{},fetchImpl=fetch,binary,now=Date.now,tokenName='spotify-account.enc'}) {
   fs.mkdirSync(directory,{recursive:true,mode:0o700});
-  const stateFile=path.join(directory,'spotify-library.json'),tokenFile=path.join(directory,'spotify-account.enc'),cacheDir=path.join(directory,'spotify-playback-v2'),legacyCacheDir=path.join(directory,'spotify-player');
+  if (!/^[a-zA-Z0-9_-]+\.enc$/.test(tokenName)) throw new Error('Invalid token filename.');
+  const stateFile=path.join(directory,'spotify-library.json'),tokenFile=path.join(directory,tokenName),cacheDir=path.join(directory,'spotify-playback-v2'),legacyCacheDir=path.join(directory,'spotify-player');
   let state={clientId:'',profile:null,selected:[],tracks:[],shelf:[],dismissed:[],weekly:null,previousWeekly:[],plays:{},likedTracks:[],lastfm:{username:'',apiKey:''}};
   try{const raw=JSON.parse(fs.readFileSync(stateFile,'utf8'));for(const key of Object.keys(state))if(raw[key]!==undefined)state[key]=raw[key];}catch{}
   for(const key of ['selected','tracks','shelf','dismissed'])if(!Array.isArray(state[key]))state[key]=[];
@@ -118,6 +119,11 @@ function createSpotify({directory,safeStorage,openExternal,emit=()=>{},fetchImpl
     const collected=[];for(const id of ids){const items=await pages('playlists/'+id+'/items');for(const item of items){const t=track(item.item||item.track);if(t&&t.playable)collected.push(t);}}
     const tracks=[...new Map(collected.map(t=>[t.id,t])).values()];if(JSON.stringify(tracks.map(t=>t.id))!==JSON.stringify(state.tracks.map(t=>t.id))||JSON.stringify(ids)!==JSON.stringify(state.selected))invalidateWeekly();state.tracks=tracks;state.selected=[...ids];state.syncedAt=now();save();return status();
   }
+  async function playlistTracks(id){
+    if(!idOK(id))throw new Error('Invalid playlist.');
+    const available=await playlists();if(!available.some(p=>p.id===id&&p.accessible))throw new Error('Select a playlist you own or collaborate on.');
+    return (await pages('playlists/'+id+'/items')).map(item=>track(item.item||item.track)).filter(t=>t?.playable);
+  }
   async function search(query,type='track'){if(!['track','album','artist'].includes(type))throw new Error('Invalid search type.');const data=await api('search?q='+encodeURIComponent(String(query).slice(0,250))+'&type='+type+'&limit=10');return type==='track'?(data.tracks?.items||[]).map(track).filter(t=>t?.playable):(data[type+'s']?.items||[]);}
   async function albumTracks(id){if(!idOK(id))throw new Error('Invalid album.');const album=await api('albums/'+id);const items=await pages('albums/'+id+'/tracks');return items.map(item=>track({...item,album})).filter(Boolean);}
   async function shelf(id,remove=false){if(!idOK(id))throw new Error('Invalid album.');if(remove)state.shelf=state.shelf.filter(a=>a.id!==id);else if(!state.shelf.some(a=>a.id===id)){const album=await api('albums/'+id);state.shelf.push({id:album.id,name:album.name,artists:album.artists,images:album.images,tracks:await albumTracks(id)});state.dismissed=state.dismissed.filter(x=>x!==id);}invalidateWeekly();save();return status();}
@@ -145,7 +151,7 @@ function createSpotify({directory,safeStorage,openExternal,emit=()=>{},fetchImpl
   }
   async function dismiss(id){if(!idOK(id))throw new Error('Invalid album.');if(!state.dismissed.includes(id))state.dismissed.push(id);if(state.weekly)state.weekly.items=state.weekly.items.filter(a=>a.id!==id);save();return status();}
   async function radio(genre){const seeds=await search('genre:'+String(genre).replace(/[^\p{L}\p{N} -]/gu,'').slice(0,60));if(!seeds.length)throw new Error('No Spotify tracks found for this genre.');const response=await playback('radio',{uri:seeds[0].uri});return (response.tracks||[]).map(t=>{const id=(t.uri||'').split(':').at(-1);return idOK(id)?{id,uri:t.uri,url:t.uri,platform:'spotify',title:t.metadata?.title||'Untitled',artist:t.metadata?.artist_name||'',albumId:t.album_uri?.split(':').at(-1),album:t.metadata?.album_title||'',duration:0,thumbnail:''}:null;}).filter(Boolean);}
-  const operations={status,connect,connectPlayback,disconnect,playlists,sync,search,albumTracks,shelf,like,weekly,dismiss,radio,playback,played,lastfm};
+  const operations={status,connect,connectPlayback,disconnect,playlists,playlistTracks,sync,search,albumTracks,shelf,like,weekly,dismiss,radio,playback,played,lastfm};
   return {...operations,async invoke(operation,args=[]){if(!Object.hasOwn(operations,operation)||!Array.isArray(args))throw new Error('Unknown Spotify operation.');return operations[operation](...args);},close(){login?.();native.close();}};
 }
 module.exports={createSpotify,NativePlayer,track,REDIRECT,PLAYBACK_REDIRECT,SCOPES};

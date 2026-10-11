@@ -6,21 +6,24 @@
     "riff": "./cli.js"
   },
   "scripts": {
-    "start": "electron .",
+    "start": "bash macos/scripts/start.sh",
     "test": "node --test test/*.test.js",
     "dist": "electron-builder",
     "release": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags",
-    "dev": "electron .",
+    "dev": "bash macos/scripts/start.sh",
     "build": "electron-builder --publish never",
     "prepare:mac": "node scripts/prepare-macos-tools.js --arch arm64",
-    "build:mac": "electron-builder --mac --arm64 --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false",
+    "build:mac": "bash macos/scripts/build.sh",
     "build:mac:signed": "electron-builder --mac --arm64 --publish never -c.forceCodeSigning=true",
     "test:mac": "node scripts/smoke-macos.js",
     "test:ui": "RIFF_GLASS_QA=1 node scripts/smoke-macos.js",
     "prepare:native": "node scripts/build-native.js",
-    "ios:bridge": "node scripts/ios-bridge.js"
+    "ios:bridge": "node scripts/ios-bridge.js",
+    "start:legacy": "electron .",
+    "dev:legacy": "electron .",
+    "build:mac:legacy": "electron-builder --mac --arm64 --publish never -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false"
   },
   "keywords": [],
   "author": "veikkaheiskanen",

@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/images/cuda-promo.png" alt="Cuda for Mac — a calm home for your music" width="100%">
+  <img src="docs/images/cuda-native-home.png" alt="Cuda for Mac — a calm home for your music" width="100%">
 </p>
 
 # Cuda
 
 **Your music. A little more calm.**
 
-Cuda is a music player for Apple Silicon, built by [veikkaheiskanen](https://github.com/veikkaheiskanen). A clean, Liquid Glass-inspired interface brings Spotify, YouTube, YouTube Music, SoundCloud, and your own audio files into one place.
+Cuda is a music player for Apple Silicon, built by [veikkaheiskanen](https://github.com/veikkaheiskanen). A native SwiftUI interface with Apple’s actual Liquid Glass brings Spotify, YouTube, YouTube Music, SoundCloud, and your own audio files into one place.
 
 Built with help from ChatGPT
 
@@ -22,13 +22,13 @@ Built with help from ChatGPT
 - **Comfortable on your Mac.** Light, dark, and system appearance; adjustable window transparency; native traffic lights; keyboard shortcuts; and an adaptive layout for narrow windows.
 
 <p align="center">
-  <img src="docs/images/cuda-shelf-light.png" alt="Cuda Shelf in light appearance with favourites and playlists" width="100%">
+  <img src="docs/images/cuda-native-shelf.png" alt="Cuda native Shelf in dark appearance with favourites and playlists" width="100%">
 </p>
 
 <table>
   <tr>
-    <td width="68%"><img src="docs/images/cuda-player-dark.png" alt="Cuda's expanded player in dark appearance"></td>
-    <td width="32%"><img src="docs/images/cuda-player-narrow.png" alt="Cuda's adaptive player in a narrow window"></td>
+    <td width="68%"><img src="docs/images/cuda-native-player.png" alt="Cuda's expanded player in dark appearance"></td>
+    <td width="32%"><img src="docs/images/cuda-native-player-narrow.png" alt="Cuda's adaptive player in a narrow window"></td>
   </tr>
 </table>
 
@@ -36,23 +36,23 @@ Built with help from ChatGPT
 
 ## Build for Mac
 
-Cuda targets native **arm64**, including Apple M5. Use an Apple Silicon Mac running macOS 12 or later, Node.js 22+, Rust, and Apple's Command Line Tools.
+Cuda targets native **arm64**, including Apple M5. Use an Apple Silicon Mac running **macOS 26 or later**, Node.js 24, Rust, and Apple’s current Command Line Tools or Xcode.
 
 ```sh
 git clone https://github.com/veikkaheiskanen/Cuda.git
 cd Cuda
-npm ci
+npm ci --prefix macos --omit=dev
 npm test
 npm run build:mac
 ```
 
-The build prepares checksum-verified FFmpeg and yt-dlp tools, compiles the native Spotify player and window material module, and creates the app, DMG, and ZIP in `dist/`. No Homebrew audio tools or Rosetta are required.
+The build compiles SwiftUI/AppKit, the Rust Spotify player, and a network audio decoder, then packages verified media tools and a private source resolver into `dist/Cuda.app`. The app contains no Electron, Chromium, or web view. No Homebrew audio tools or Rosetta are required. Read the [native Mac guide](macos/README.md) for architecture, migration, and verification.
 
-Open the DMG and drag **Cuda** into **Applications**. Local builds are ad-hoc signed and are not Apple-notarized; downloaded copies may need **Open Anyway** in macOS Privacy & Security. See [MACOS.md](MACOS.md) for signed builds, distribution, and packaged-app checks.
+Open the DMG and drag **Cuda** into **Applications**. Local builds are ad-hoc signed and are not Apple-notarized; downloaded copies may need **Open Anyway** in macOS Privacy & Security. See the [native Mac guide](macos/README.md) for distribution and packaged-app checks.
 
 ## Connect Spotify
 
-Open **Settings → Integrations**. Connect your library with a registered Spotify app Client ID, select the playlists you want to use for recommendations, then choose **Connect playback** for the native player. Spotify playback requires Premium. Your Cuda favourites remain saved locally even if Spotify library sync is unavailable.
+Open **Settings → Spotify**. Connect your library with a registered Spotify app Client ID, select the playlists you want to use for recommendations, then choose **Connect playback** for the native player. Spotify playback requires Premium. Your Cuda favourites remain saved locally even if Spotify library sync is unavailable.
 
 Read [SPOTIFY.md](SPOTIFY.md) for setup, account requirements, radio, album browsing, and weekly picks. Service availability and streaming start times depend on the provider and network.
 
@@ -61,20 +61,20 @@ Read [SPOTIFY.md](SPOTIFY.md) for setup, account requirements, radio, album brow
 ```sh
 npm start                 # Run the desktop app
 npm test                  # Regression tests
-npm run test:mac           # Test a packaged Apple Silicon build
-npm run test:ui            # Interface and audio proxy checks
+npm run build:mac          # Build the native SwiftUI app
+npm run start:legacy       # Run the previous Electron interface
 ```
 
-The packaged checks use an isolated profile and generated audio fixtures. Source preparation and UI capture helpers are in `scripts/`; native playback lives in `native/spotify-player/`.
+Native Mac code and audio checks live in `macos/`; Spotify playback lives in `native/spotify-player/`. Tests use isolated profiles and generated audio fixtures. See the native guide for source migration and current feature limits.
 
-The glass treatment combines Electron's native macOS vibrancy with custom interface styling. It is inspired by Apple's design guidance; it does not use Apple's native Liquid Glass rendering framework.
+The Mac app uses SwiftUI’s system `glassEffect` and glass controls on macOS 26. AppKit manages real window geometry; there are no CSS corner masks or simulated traffic lights. The previous Electron interface remains in the repository as a legacy fallback and is not included in the native app.
 
 ## Powered on
 
 - [**Riff by rootless**](https://github.com/rootscripts/riff) — the foundation of Cuda.
 - [**Deck by jarilehtinen**](https://github.com/jarilehtinen/deck) — inspiration and credited source for Spotify features.
 
-Cuda also uses Electron, librespot, FFmpeg, yt-dlp, HLS.js, and Tone.js. Native vendor code and redistributed tools retain their own license notices. See [LICENSE](LICENSE), [native/DECK-LICENSE](native/DECK-LICENSE), and the bundled third-party notices.
+Cuda Native uses SwiftUI, AppKit, AVFoundation, a private Node resolver, librespot, FFmpeg, and yt-dlp. HLS.js, Tone.js, and Electron belong to the legacy interface. Native vendor code and redistributed tools retain their own license notices. See [LICENSE](LICENSE), [native/DECK-LICENSE](native/DECK-LICENSE), and the bundled third-party notices.
 
 ## Cuda for iOS
 

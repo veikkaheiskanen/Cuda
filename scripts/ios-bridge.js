@@ -105,8 +105,9 @@ async function main() {
   process.env.RIFF_DATA_DIR ||= path.join(dir, 'Media');
   for (const name of ['yt-dlp', 'ffmpeg', 'ffprobe']) {
     const key = 'RIFF_' + name.replace(/[^a-z0-9]/gi, '').toUpperCase();
-    const bundled = path.join('/Applications/Cuda.app/Contents/Resources/bin/bin', name);
-    if (!process.env[key] && fs.existsSync(bundled)) process.env[key] = bundled;
+    const candidates = ['tools/bin', 'bin/bin'].map(folder => path.join('/Applications/Cuda.app/Contents/Resources', folder, name));
+    const bundled = candidates.find(file => fs.existsSync(file));
+    if (!process.env[key] && bundled) process.env[key] = bundled;
   }
   const { startServer, stopServer } = require('../server');
   const upstreamPort = await startServer(0);

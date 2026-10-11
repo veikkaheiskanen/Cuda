@@ -911,6 +911,10 @@ async function handleVibeRecommendations(req, res, payload) {
 async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube', title = '', artist = '', duration = 0, thumbnail = '') {
   const mobile = url.parse(req.url, true).query.mobile === '1';
   const cleanId = cleanTrackId(trackId);
+  if (platform === 'local' && libraryIndex[cleanId]?.file) {
+    res.writeHead(200, {'Content-Type':'application/json'});
+    return res.end(JSON.stringify({success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/library-file?id=${encodeURIComponent(cleanId)}`}));
+  }
   const cachedFile = await findCachedFile(cleanId);
   if (mobileCachedFile(cachedFile, mobile)) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1167,7 +1171,7 @@ function handleAudioProxy(req, res, targetUrl, streamToken) {
 }
 
 let DOWNLOADS_DIR;
-try { DOWNLOADS_DIR = require('electron').app.getPath('downloads'); } catch (e) { DOWNLOADS_DIR = path.join(os.homedir(), 'Downloads'); }
+DOWNLOADS_DIR = process.env.RIFF_DOWNLOADS_DIR || path.join(os.homedir(), 'Downloads');
 if (!fs.existsSync(DOWNLOADS_DIR)) {
   try { fs.mkdirSync(DOWNLOADS_DIR, { recursive: true }); } catch (e) {}
 }
@@ -1551,7 +1555,15 @@ async function handleTranslate(req, res, lines, to = 'en') {
   res.end(JSON.stringify({ success: true, translations: allTranslations }));
 }
 
+const nativeServiceToken = process.env.CUDA_NATIVE_SERVICE_TOKEN;
 const server = http.createServer(async (req, res) => {
+  if (nativeServiceToken) {
+    const parsed = url.parse(req.url, true);
+    const supplied = req.headers['x-cuda-native-token'] || parsed.query.native_token || '';
+    const scopedAudio = parsed.pathname === '/api/audio-proxy' && streamContexts.has(parsed.query.stream);
+    const valid = typeof supplied === 'string' && /^[a-f0-9]{64}$/.test(supplied) && crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(nativeServiceToken));
+    if (!valid && !scopedAudio) { res.writeHead(401, {'Content-Type':'application/json'}); return res.end(JSON.stringify({error:'This service belongs to the native Cuda app.'})); }
+  }
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1638,9 +1650,10 @@ const server = http.createServer(async (req, res) => {
         const status=spotifyProvider?.status() || {};
         const known=[...(original.alternatives||[]),...(status.tracks||[]),...(status.likedTracks||[])].filter(t=>sameRecording(original,t));
         const excluded=new Set(Array.isArray(payload.exclude)?payload.exclude:[]);
+        const appleAudio=Boolean(payload.mobile || payload.nativeApple);
         const usable=t=>t.platform!=='spotify'||(!payload.mobile && status.playbackConnected);
         const cached=await findCachedFile(original.id);
-        if(mobileCachedFile(cached, payload.mobile) && !payload.refresh){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:original,stream:{success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(original.id))}`}}));}
+        if(mobileCachedFile(cached, appleAudio) && !payload.refresh && !excluded.has(original.platform+':'+original.id)){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:original,stream:{success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(original.id))}`}}));}
         const native=[original,...known].find(t=>t.playable!==false&&t.platform==='spotify'&&usable(t)&&!excluded.has(t.platform+':'+t.id));
         if(native){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:{...native,alternatives:[original,...known].filter(t=>t!==native)}}));}
         const resolve=async t=>{
@@ -1648,8 +1661,8 @@ const server = http.createServer(async (req, res) => {
           if(!['youtube','ytmusic','soundcloud'].includes(t.platform))throw new Error('Unsupported audio source.');
           if(!/^https?:\/\//.test(t.url))throw new Error('Invalid source URL.');
           const file=await findCachedFile(t.id);
-          if(mobileCachedFile(file, payload.mobile)&&!payload.refresh)return {success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(t.id))}`};
-          return resolveAudioStream(t.url,t.id,t.platform,Boolean(payload.refresh),Boolean(payload.mobile));
+          if(mobileCachedFile(file, appleAudio)&&!payload.refresh)return {success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(t.id))}`};
+          return resolveAudioStream(t.url,t.id,t.platform,Boolean(payload.refresh),appleAudio);
         };
         const discover=async add=>{
           const sink={destroyed:false,writeHead(){},write(batch){try{const result=JSON.parse(batch);add(result.tracks.flatMap(t=>[t,...(t.alternatives||[])]).filter(usable));}catch{}},end(){}};

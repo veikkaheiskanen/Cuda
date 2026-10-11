@@ -1,9 +1,10 @@
-name: Apple Silicon
+name: Native Apple Silicon Mac
 
 on:
   pull_request:
   push:
     branches: [main]
+    paths-ignore: ['ios/**', 'docs/images/**', '**.md']
   workflow_dispatch:
 
 permissions:
@@ -11,33 +12,45 @@ permissions:
 
 jobs:
   macos-arm64:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
-      - run: npm ci
+          cache-dependency-path: macos/package-lock.json
+      - run: npm ci --prefix macos --omit=dev
       - run: npm test
       - uses: dtolnay/rust-toolchain@stable
-      - run: npm run prepare:native
-      - name: Build native Mac app
+      - run: node scripts/prepare-macos-tools.js --arch arm64
+      - run: node scripts/build-native.js --spotify-only
+      - name: Build SwiftUI app with system Liquid Glass
         run: npm run build:mac
-      - name: Verify signature and architecture
+      - name: Verify native architecture, signing and absence of Electron
         run: |
-          codesign --verify --deep --strict dist/mac-arm64/Cuda.app
-          lipo dist/mac-arm64/Cuda.app/Contents/MacOS/Cuda -verify_arch arm64
-          lipo dist/mac-arm64/Cuda.app/Contents/Resources/bin/bin/ffmpeg -verify_arch arm64
-          lipo dist/mac-arm64/Cuda.app/Contents/Resources/bin/bin/ffprobe -verify_arch arm64
-      - name: Verify packaged playback
-        run: npm run test:mac
-        env:
-          RIFF_GLASS_QA: 1
+          codesign --verify --deep --strict dist/Cuda.app
+          lipo dist/Cuda.app/Contents/MacOS/Cuda -verify_arch arm64
+          test ! -d dist/Cuda.app/Contents/Frameworks/Electron\ Framework.framework
+          test ! -f dist/Cuda.app/Contents/Resources/app.asar
+          otool -L dist/Cuda.app/Contents/MacOS/Cuda
+      - name: Verify Apple audio processing
+        run: |
+          mkdir -p macos/build/test-cache
+          swiftc -module-cache-path macos/build/test-cache -swift-version 5 -parse-as-library -target arm64-apple-macos26.0 macos/Cuda/Sources/LocalAudio.swift macos/Cuda/Sources/StreamAudio.swift macos/Tests/AudioChecks.swift -o macos/build/audio-checks -framework AVFoundation
+          macos/build/audio-checks macos/Cuda/Resources/preview.wav
+      - name: Verify packaged streaming and private service
+        run: |
+          swiftc -module-cache-path macos/build/test-cache -swift-version 5 -parse-as-library -target arm64-apple-macos26.0 macos/Cuda/Sources/LocalAudio.swift macos/Cuda/Sources/StreamAudio.swift macos/Tests/StreamChecks.swift -o macos/build/stream-checks -framework AVFoundation
+          node macos/scripts/check-service.js dist/Cuda.app macos/build/stream-checks
+      - name: Verify native Shelf and source identity
+        run: |
+          swiftc -module-cache-path macos/build/test-cache -swift-version 5 -parse-as-library macos/Cuda/Sources/Models.swift macos/Tests/ModelChecks.swift -o macos/build/model-checks
+          macos/build/model-checks
+      - name: Package native app
+        run: ditto --noextattr --noqtn --norsrc -c -k --keepParent dist/Cuda.app dist/Cuda-native-mac-arm64.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: cuda-macos-arm64
-          path: |
-            dist/*.dmg
-            dist/*.zip
+          name: cuda-native-macos-arm64
+          path: dist/Cuda-native-mac-arm64.zip
           if-no-files-found: error

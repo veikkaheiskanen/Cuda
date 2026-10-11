@@ -21,3 +21,7 @@ ios/*.ipa
 ios/*.xcarchive/
 ios/**/*.xcuserstate
 ios/**/xcuserdata/
+
+macos/build/
+
+/work/

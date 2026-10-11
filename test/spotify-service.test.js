@@ -49,3 +49,8 @@ test('successful Spotify library mutations accept a 200 empty body',async t=>{
  const service=createSpotify(f.options);t.after(()=>service.close());
  assert.deepEqual(await service.like('spotify:track:'+ID,true),{liked:true});
 });
+
+test('native playlist detail fetches only accessible selected playlist items',async t=>{
+ const f=fixture(t,url=>url.includes('me/playlists')?{items:[{id:ID,name:'Mine',owner:{id:'user'}},{id:ID2,name:'Other',owner:{id:'other'}}]}:url.includes('playlists/'+ID+'/items')?{items:[{item:item()}],next:null}:defaults(url));
+ await f.service.connect(CLIENT);const tracks=await f.service.playlistTracks(ID);assert.equal(tracks.length,1);assert.equal(tracks[0].id,ID);await assert.rejects(f.service.playlistTracks(ID2),/own or collaborate/);
+});
