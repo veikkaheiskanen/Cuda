@@ -103,3 +103,11 @@ Built by [veikkaheiskanen](https://github.com/veikkaheiskanen), with help from C
 Powered on [Riff by rootless](https://github.com/rootscripts/riff) and [Deck by jarilehtinen](https://github.com/jarilehtinen/deck). Redistributed runtimes, Rust dependencies, and media tools retain their licenses and corresponding source notices in the app resources.
 
 The native design follows Apple's [Liquid Glass adoption guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass), keeping glass in the control layer and music content readable.
+
+## Automatic iPhone streaming
+
+In Cuda Native 1.0.6+, enabling **Settings → Device sync** also starts the mobile streaming companion inside the app. Cuda for iOS 1.1.1+ uses that same pairing to set up YouTube, YouTube Music and SoundCloud automatically. Existing pairings reconnect after updating; no separate command, address or pairing key is required.
+
+The playback key is handed over through the pinned TLS Shelf connection, stored in iOS Keychain and refreshed after reconnect or Mac restart. It is independent of the Shelf bearer key and private desktop token, and permits only mobile search/resolution/media routes. Reset pairing rotates it; disabling Device sync or quitting Cuda closes both listeners. The streaming port is assigned automatically to avoid conflicts with a standalone companion.
+
+Shelf/offline sync and connection setup use pinned TLS. Streaming audio and HLS use authenticated local HTTP for Apple media compatibility, so use the same trusted local network and keep your Mac awake with Cuda open. The separate standalone companion remains an advanced option.

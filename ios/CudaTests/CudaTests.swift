@@ -45,6 +45,57 @@ final class CudaTests: XCTestCase {
         let rejected = SyncConnection(wrong); defer { rejected.session.invalidateAndCancel() }
         do { _ = try await rejected.health(); XCTFail("Accepted an unpaired certificate") } catch { }
     }
+    func testCompanionSetupStaysOnThePairedMacAndRejectsInvalidCapabilities() throws {
+        let id = UUID().uuidString, key = String(repeating: "a", count: 64)
+        let setup = CompanionSetup(service: "cuda-ios-companion", version: 1, port: 40000, token: key)
+        XCTAssertEqual(try setup.connection(address: "https://cuda.local:38474", macID: id).address, "http://cuda.local:40000")
+        XCTAssertThrowsError(try setup.connection(address: "https://example.com", macID: id))
+        XCTAssertThrowsError(try setup.connection(address: "https://user:secret@cuda.local", macID: id))
+        XCTAssertThrowsError(try setup.connection(address: "https://cuda.local/path", macID: id))
+        XCTAssertThrowsError(try CompanionSetup(service: "other", version: 1, port: 40000, token: key).connection(address: "https://cuda.local", macID: id))
+        XCTAssertThrowsError(try CompanionSetup(service: "cuda-ios-companion", version: 1, port: 0, token: key).connection(address: "https://cuda.local", macID: id))
+        XCTAssertThrowsError(try CompanionSetup(service: "cuda-ios-companion", version: 1, port: 40000, token: "invalid").connection(address: "https://cuda.local", macID: id))
+    }
+    @MainActor
+    func testDeviceSyncPairingAutomaticallyConnectsSearchAndAudio() async throws {
+        struct Fixture: Decodable { var link: String? }
+        guard let url = Bundle(for: CudaTests.self).url(forResource: "SyncFixture", withExtension: "json"),
+              let link = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url)).link else { throw XCTSkip("Start the isolated sync fixture.") }
+        let store = Store.shared, sync = store.deviceSync
+        guard sync.pairing == nil else { throw XCTSkip("This test only uses an unpaired, isolated app profile.") }
+        let original = store.state
+        let accounts = ["device-sync", "device-companion"], keys = accounts.map { Keychain.read($0) }
+        let names = ["sync-enabled", "sync-offline", "companionManualOverride"], settings = names.map { UserDefaults.standard.object(forKey: $0) }
+        let files = ["shelf.json", "sync-journal.json"].map { store.root.appendingPathComponent($0) }
+        let contents = files.map { try? Data(contentsOf: $0) }
+        defer {
+            store.state = original; store.save()
+            for (index, account) in accounts.enumerated() { try? Keychain.write(keys[index], account: account) }
+            for (index, name) in names.enumerated() { if let value = settings[index] { UserDefaults.standard.set(value, forKey: name) } else { UserDefaults.standard.removeObject(forKey: name) } }
+            for (index, file) in files.enumerated() { if let data = contents[index] { try? data.write(to: file, options: .atomic) } else { try? FileManager.default.removeItem(at: file) } }
+        }
+        do {
+            let paired = try SyncPairing.parse(link)
+            await sync.pair(paired)
+            XCTAssertEqual(sync.playback?.macID, paired.id)
+            XCTAssertNotEqual(store.companion.token, paired.key)
+            XCTAssertEqual(store.companion.address, sync.playback?.address)
+            let results = try await store.companion.search("original fixture")
+            let song = try XCTUnwrap(results.first)
+            XCTAssertEqual(song.platform, "youtube")
+            store.player.play(song, in: results)
+            for _ in 0..<100 { if store.player.playing { break }; try await Task.sleep(for: .milliseconds(100)) }
+            XCTAssertTrue(store.player.playing, store.player.error ?? "Paired companion audio did not start")
+            XCTAssertEqual(store.player.current?.platform, "youtube")
+        } catch {
+            sync.disconnect()
+            for _ in 0..<100 { if !sync.busy { break }; try? await Task.sleep(for: .milliseconds(20)) }
+            throw error
+        }
+        sync.disconnect()
+        for _ in 0..<100 { if !sync.busy { break }; try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertFalse(store.player.playing); XCTAssertNil(sync.playback)
+    }
     func testCanonicalIdentityPreservesDifferentSources() {
         XCTAssertEqual(Track.unique([track(), track(), track("spotify")]).count, 2)
     }

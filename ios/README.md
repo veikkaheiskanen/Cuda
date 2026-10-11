@@ -19,7 +19,7 @@ Desktop-only integrations (Discord, desktop window transparency, the Rust Spotif
 
 ## Install the IPA
 
-The GitHub **iOS** workflow compiles an ARM64 Release application and packages `Cuda-1.1.0-ios-unsigned.ipa`. This is a real device binary, **unsigned**, intended for a tool such as Sideloadly or AltStore that signs apps with your own Apple account. It cannot be installed by opening the file directly, and it is not an App Store / TestFlight build. Follow your signing tool's device trust and Developer Mode instructions. No Apple credentials or signing certificates are included in this repository.
+The GitHub **iOS** workflow compiles an ARM64 Release application and packages `Cuda-1.1.1-ios-unsigned.ipa`. This is a real device binary, **unsigned**, intended for a tool such as Sideloadly or AltStore that signs apps with your own Apple account. It cannot be installed by opening the file directly, and it is not an App Store / TestFlight build. Follow your signing tool's device trust and Developer Mode instructions. No Apple credentials or signing certificates are included in this repository.
 
 Alternatively, install full Xcode and build the project on your Mac. Set your own development team in Signing & Capabilities, select your connected iPhone, and Run. A paid Apple Developer account and appropriate distribution signing are needed for TestFlight/App Store distribution.
 
@@ -44,9 +44,19 @@ Keep both devices on the same local network and leave Cuda open on the Mac. Bonj
 
 iOS syncs on launch, Shelf changes, network reconnect and periodic checks while open. It also requests background processing; **iOS decides when those checks run**, so an app closed or suspended by the system cannot promise immediate detection. Unfinished transfers retry when reachable; previously downloaded songs play without a Mac connection. The Mac listener is off until enabled and exposes only authenticated Shelf sync and audio transfer, not account or desktop control endpoints.
 
-## Pair public streaming sources
+## Public streaming: automatic setup
 
-1. Install Cuda for Mac so the companion can reuse its bundled extraction tools, or install `yt-dlp`, FFmpeg, and FFprobe yourself. The companion runs its own current resolver; the desktop app does not need to be open.
+With **Cuda Native 1.0.6+** and **Cuda for iOS 1.1.1+**, Device sync pairing also connects YouTube, YouTube Music and SoundCloud. The Mac app starts its streaming companion automatically when Device sync is enabled. Scan the existing Device sync QR code or paste its link once. Existing pairings reconnect automatically after updating both apps; no extra address, key, or companion command is needed.
+
+The phone fetches a separately scoped playback key through the certificate-pinned TLS connection and stores it in Keychain. It refreshes the connection after launch, network changes and before public playback/search, including when the Mac’s address or playback port changes. Reset pairing or disable Device sync on the Mac to revoke both connections. Playback access cannot call desktop account or Shelf mutation endpoints.
+
+Keep Cuda open on an awake Mac on the same **trusted local network**. Shelf/offline sync and playback setup are encrypted with pinned TLS. Audio streaming uses a separate authenticated local HTTP connection for Apple media playback and HLS; it is not encrypted on the LAN. Its read-only playback key is different from the Shelf key and private desktop capability. Local audio and Spotify still play independently of this connection.
+
+In iOS Settings, **YouTube & SoundCloud** shows the automatic connection. **Advanced companion setup** remains available for a standalone or older companion; manually connecting it is an explicit override. Choose **Use Device sync connection** to return to automatic setup.
+
+### Standalone companion (advanced)
+
+1. Install Cuda for Mac so the companion can reuse its bundled extraction tools, or install `yt-dlp`, FFmpeg, and FFprobe yourself. The standalone companion runs its own current resolver; use this only for an older Mac build or a custom setup.
 2. In the project root, with Node 22 or later installed, run **`npm run ios:bridge`**.
 3. The companion prints a LAN address and a random pairing key. Enter them in Cuda for iOS → Settings → Mac companion → **Pair Mac**. Both devices need to be on the same Wi-Fi. Allow incoming connections if macOS asks.
 4. Search and play public sources on your phone. Keep the Mac awake while listening.

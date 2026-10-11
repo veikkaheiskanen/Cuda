@@ -12,7 +12,7 @@ Built with help from ChatGPT
 
 [Download for Mac](https://github.com/veikkaheiskanen/Cuda/releases/latest) · [Explore the app](#a-place-for-every-song) · [Build for Mac](#build-for-mac) · [Spotify setup](SPOTIFY.md) · [Report an issue](https://github.com/veikkaheiskanen/Cuda/issues)
 
-Keep Mac and iPhone together with **Settings → Device sync**: one-time QR/link pairing, automatic offline audio transfer, and two-way playlists and favourites. Sync uses an authenticated encrypted local connection; no separate companion command is needed for Shelf sync. [Setup](macos/README.md#device-sync-between-mac-and-ios).
+Keep Mac and iPhone together with **Settings → Device sync**: one-time QR/link pairing, automatic offline audio transfer, and two-way playlists and favourites. Sync uses an authenticated encrypted local connection; the same pairing automatically connects iPhone YouTube and SoundCloud playback, with no separate companion command. [Setup](macos/README.md#device-sync-between-mac-and-ios).
 
 ## A place for every song
 

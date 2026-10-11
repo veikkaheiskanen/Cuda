@@ -21,6 +21,7 @@ function rewrite(value, upstream, origin, token) {
     // Stream and HLS segment URLs stay behind the same authenticated bridge.
     if (value.startsWith(upstream + '/api/')) {
       const u = new URL(value); if (!routes.has(u.pathname)) return value;
+      u.searchParams.delete('native_token');
       u.searchParams.set('pair', token); return origin + u.pathname + u.search;
     }
     return value;
@@ -29,7 +30,7 @@ function rewrite(value, upstream, origin, token) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewrite(item, upstream, origin, token)]));
   return value;
 }
-function createBridge({ token, upstream = 'http://127.0.0.1:38472', allowedHosts = new Set(['localhost', '127.0.0.1']) }) {
+function createBridge({ token, upstream = 'http://127.0.0.1:38472', allowedHosts = new Set(['localhost', '127.0.0.1']), upstreamHeaders = {} }) {
   const target = new URL(upstream);
   if (target.hostname !== '127.0.0.1' || target.protocol !== 'http:') throw new Error('Upstream must be the local Cuda server.');
   if (typeof token !== 'string' || token.length < 32) throw new Error('Use a pairing key of at least 32 characters.');
@@ -37,7 +38,7 @@ function createBridge({ token, upstream = 'http://127.0.0.1:38472', allowedHosts
     const fail = (code, error) => { if (!res.headersSent) res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error })); };
     let incoming;
     try { incoming = new URL(req.url, 'http://' + req.headers.host); } catch { return fail(400, 'Invalid request.'); }
-    if (!allowedHosts.has(incoming.hostname)) return fail(403, 'Unrecognized companion address.');
+    if (!(typeof allowedHosts === 'function' ? allowedHosts(incoming.hostname) : allowedHosts.has(incoming.hostname))) return fail(403, 'Unrecognized companion address.');
     if (!authenticated(req, token)) return fail(401, 'Pairing key is missing or incorrect.');
     if (incoming.pathname === '/health' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -47,7 +48,7 @@ function createBridge({ token, upstream = 'http://127.0.0.1:38472', allowedHosts
     incoming.searchParams.delete('pair');
     if (incoming.pathname === '/api/stream-info') incoming.searchParams.set('mobile', '1');
     const origin = incoming.origin;
-    const headers = { accept: req.headers.accept || '*/*' };
+    const headers = { ...upstreamHeaders, accept: req.headers.accept || '*/*' };
     if (req.headers.range) headers.range = req.headers.range;
     if (req.method === 'POST') headers['content-type'] = 'application/json';
     const forward = () => {

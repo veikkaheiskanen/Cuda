@@ -24,7 +24,8 @@ async function invoke(method,args) {
   lyrics=new (require('./lyrics-service').LyricsService)({directory,store:secureStore(Buffer.from(args.key,'base64')),fallback:async(title,artist)=>{const value=await invoke('api',{path:'/api/lyrics?'+new URLSearchParams({title,artist})});return value.lyrics||'';}});
   process.env.CUDA_NATIVE_SERVICE_TOKEN=serviceToken;
   const server=require('../server');server.setSpotifyProvider(spotify);port=await server.startServer(0);
-  shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send});
+  const companion=new (require('./mobile-companion').MobileCompanion)({upstream:'http://127.0.0.1:'+port,serviceToken});
+  shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send,companion,listenPort:process.env.CUDA_NATIVE_TEST_SYNC_PORT==='0'?0:38474});
   await shelfSync.configure().catch(()=>{});
   const migration=await require('./legacy-shelf').migrateShelf(directory);
   let shelf;try{shelf=privateMedia(JSON.parse(fs.readFileSync(path.join(directory,'native-shelf.json'),'utf8')));}catch{}

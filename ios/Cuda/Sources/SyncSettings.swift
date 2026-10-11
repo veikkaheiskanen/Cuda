@@ -32,7 +32,7 @@ struct DeviceSyncSettings: View {
             Text(sync.message).font(.subheadline).foregroundStyle(.secondary)
             if let last = sync.lastSync { LabeledContent("Last synced") { Text(last, style: .relative).font(.subheadline) } }
         } header: { Text("Device sync") } footer: {
-            Text("Enable Device sync in Cuda’s Mac Settings. Scan its code with Camera or paste its pairing link here. Favourites, playlists and new offline songs sync both ways over encrypted Wi-Fi. Your Mac must be awake with Cuda open. iOS schedules background checks when allowed and catches up automatically whenever you open Cuda.")
+            Text("Enable Device sync in Cuda’s Mac Settings. Scan its code with Camera or paste its pairing link here. Favourites, playlists and offline songs sync over encrypted Wi-Fi. YouTube and SoundCloud connect automatically too. Keep Cuda open on your awake Mac. iOS schedules background checks when allowed and catches up whenever you open Cuda.")
         }
     }
 }

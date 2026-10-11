@@ -92,7 +92,7 @@ struct MacSyncSettings: View {
                 HStack { Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await sync.sync() } }.disabled(sync.busy); if sync.busy { ProgressView().controlSize(.small) }; Button("Reset pairing", role: .destructive) { resetting = true } }
             }
             Text(sync.message).font(.callout).foregroundStyle(.secondary)
-            Text("Favourites and playlists sync both ways. New imported or downloaded songs copy automatically, without duplicates. Keep Cuda open on the Mac; devices must be on the same local network. Connections are encrypted and tied to this pairing code.").font(.callout).foregroundStyle(.secondary)
+            Text("Favourites, playlists and new offline songs sync automatically over encrypted Wi-Fi. Pairing also connects YouTube, YouTube Music and SoundCloud playback on your iPhone—no separate companion setup. Keep Cuda open on an awake Mac on the same trusted local network. Playback streams use a separate local connection.").font(.callout).foregroundStyle(.secondary)
         }.confirmationDialog("Disconnect previously paired devices?", isPresented: $resetting) { Button("Reset pairing", role: .destructive) { Task { await sync.configure(reset: true) } } }
     }
     private func qr(_ value: String) -> NSImage? {

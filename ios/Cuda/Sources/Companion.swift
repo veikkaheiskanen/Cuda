@@ -1,5 +1,30 @@
 import Foundation
 
+struct PairedCompanion: Codable {
+    var macID: String
+    var address: String
+    var token: String
+    var connection: Companion { Companion(address: address, token: token) }
+}
+struct CompanionSetup: Decodable {
+    var service: String
+    var version: Int
+    var port: Int
+    var token: String
+    var error: String?
+    func connection(address: String, macID: String) throws -> PairedCompanion {
+        guard service == "cuda-ios-companion", version == 1, (1...65535).contains(port),
+              token.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              var url = URLComponents(string: address), url.scheme == "https", url.user == nil, url.password == nil,
+              url.query == nil, url.fragment == nil, url.path.isEmpty, UUID(uuidString: macID) != nil else {
+            throw CudaError.message(error?.isEmpty == false ? error! : "Reopen Cuda on your Mac to start its streaming companion.")
+        }
+        url.scheme = "http"; url.port = port
+        guard let origin = url.string, Companion.validAddress(origin) else { throw CudaError.message("The streaming companion must use the paired Mac’s local address.") }
+        return PairedCompanion(macID: macID, address: origin, token: token)
+    }
+}
+
 struct Companion {
     var address: String
     var token: String
@@ -15,7 +40,7 @@ struct Companion {
     }
     func endpoint(_ path: String, items: [URLQueryItem] = []) throws -> URL {
         guard Self.validAddress(address), !token.isEmpty, var url = URLComponents(string: address) else {
-            throw CudaError.message("Pair your Mac in Settings to use YouTube and SoundCloud.")
+            throw CudaError.message("Open Cuda on your paired Mac and connect to the same Wi-Fi. Set up Device sync in Settings if needed.")
         }
         url.path = path; url.queryItems = items.isEmpty ? nil : items
         guard let result = url.url else { throw CudaError.message("Enter a valid companion address.") }

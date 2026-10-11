@@ -42,9 +42,9 @@ final class SyncTrust: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
 struct SyncConnection {
     let pairing: SyncPairing
     let session: URLSession
-    init(_ pairing: SyncPairing) {
+    init(_ pairing: SyncPairing, waitsForConnectivity: Bool = true) {
         self.pairing = pairing
-        let configuration = URLSessionConfiguration.ephemeral; configuration.waitsForConnectivity = true; configuration.timeoutIntervalForRequest = 45; configuration.timeoutIntervalForResource = 300; configuration.allowsCellularAccess = false
+        let configuration = URLSessionConfiguration.ephemeral; configuration.waitsForConnectivity = waitsForConnectivity; configuration.timeoutIntervalForRequest = 45; configuration.timeoutIntervalForResource = 300; configuration.allowsCellularAccess = false
         session = URLSession(configuration: configuration, delegate: SyncTrust(pairing.fingerprint), delegateQueue: nil)
     }
     func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
@@ -65,6 +65,14 @@ struct SyncConnection {
         let (data, response) = try await session.data(for: request("/sync/health")); try validate(response)
         let value = try JSONDecoder().decode(Health.self, from: data); guard value.version == 1, value.id == pairing.id else { throw CudaError.message("This is a different Mac. Pair it in Settings.") }; return value.id
     }
+    func companion() async throws -> PairedCompanion? {
+        var req = try request("/sync/companion"); req.timeoutInterval = 5
+        let (data, response) = try await session.data(for: req)
+        if (response as? HTTPURLResponse)?.statusCode == 404 { return nil }
+        try validate(response)
+        guard data.count < 8_000 else { throw CudaError.message("Invalid streaming companion response.") }
+        return try JSONDecoder().decode(CompanionSetup.self, from: data).connection(address: pairing.address, macID: pairing.id)
+    }
 }
 @MainActor
 final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, NetServiceDelegate {
@@ -75,6 +83,8 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
     @Published var message = "Pair once to keep your Mac and iPhone Shelf together."
     @Published var progress = ""
     @Published var lastSync: Date?
+    @Published private(set) var playback: PairedCompanion?
+    @Published private(set) var playbackStatus = "Pair in Device sync to connect YouTube and SoundCloud automatically."
     @Published var enabled: Bool { didSet { UserDefaults.standard.set(enabled, forKey: "sync-enabled"); if enabled { schedule(); Task { await sync() } } else { connectionSession?.invalidateAndCancel(); BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundID) } } }
     @Published var offline: Bool { didSet { UserDefaults.standard.set(offline, forKey: "sync-offline"); if offline { Task { await sync() } } } }
     private unowned let store: Store
@@ -91,6 +101,9 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
         self.store = store; enabled = UserDefaults.standard.object(forKey: "sync-enabled") as? Bool ?? true; offline = UserDefaults.standard.object(forKey: "sync-offline") as? Bool ?? true
         super.init()
         if let data = Keychain.read("device-sync").data(using: .utf8) { pairing = try? JSONDecoder().decode(SyncPairing.self, from: data) }
+        if let data = Keychain.read("device-companion").data(using: .utf8), let saved = try? JSONDecoder().decode(PairedCompanion.self, from: data), saved.macID == pairing?.id {
+            playback = saved; playbackStatus = "Connected through Device sync."
+        }
         if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(ShelfSyncJournal.self, from: data) { journal = saved }
         journal.capture(store.state); persist()
     }
@@ -113,17 +126,51 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
             _ = try await connection.health()
             try Keychain.write(String(data: JSONEncoder().encode(candidate), encoding: .utf8)!, account: "device-sync")
             pairing = candidate; pendingPair = nil; enabled = true; message = "Paired with your Mac."; discover()
+            UserDefaults.standard.set(false, forKey: "companionManualOverride")
+            playback = nil; await refreshPlayback(connection)
         } catch { message = "Could not pair. " + error.localizedDescription; return }
         Task { await sync() }
     }
     func disconnect() {
         connectionSession?.invalidateAndCancel(); pending?.cancel(); timer?.cancel(); browser?.stop(); browser = nil
-        try? Keychain.write("", account: "device-sync"); pairing = nil; enabled = false; message = "Disconnected. Your saved music stays on this device."
+        if playback != nil && !UserDefaults.standard.bool(forKey: "companionManualOverride") { store.player.disconnectCompanion() }
+        try? Keychain.write("", account: "device-sync"); try? Keychain.write("", account: "device-companion")
+        playback = nil; playbackStatus = "Pair in Device sync to connect streaming automatically."
+        pairing = nil; enabled = false; message = "Disconnected. Your saved music stays on this device."
+    }
+    private var refreshingPlayback = false
+    func refreshPlaybackConnection() async {
+        guard let pairing, !refreshingPlayback else { return }; refreshingPlayback = true
+        defer { refreshingPlayback = false }
+        let connection = SyncConnection(pairing, waitsForConnectivity: false); defer { connection.session.invalidateAndCancel() }
+        await refreshPlayback(connection)
+    }
+    private func refreshPlayback(_ connection: SyncConnection) async {
+        do {
+            let value = try await connection.companion()
+            guard pairing?.id == connection.pairing.id, pairing?.key == connection.pairing.key, pairing?.address == connection.pairing.address else { return }
+            if let value {
+                if playback?.address != value.address || playback?.token != value.token || playback?.macID != value.macID {
+                    try Keychain.write(String(data: JSONEncoder().encode(value), encoding: .utf8)!, account: "device-companion")
+                }
+                playback = value; playbackStatus = "Connected through Device sync."
+            } else {
+                playback = nil; try? Keychain.write("", account: "device-companion")
+                playbackStatus = "Update Cuda on your Mac to 1.0.6 or later for automatic streaming setup."
+            }
+        } catch {
+            if pairing?.id == connection.pairing.id, pairing?.address == connection.pairing.address {
+                playback = nil
+                playbackStatus = "Streaming connection paused. " + error.localizedDescription
+            }
+        }
     }
     func sync() async {
+        if !enabled { await refreshPlaybackConnection(); return }
         guard enabled, let pairing, !busy else { return }; busy = true; defer { busy = false; progress = ""; schedule() }
         let connection = SyncConnection(pairing); connectionSession = connection.session; defer { connection.session.invalidateAndCancel(); connectionSession = nil }
         do {
+            await refreshPlayback(connection)
             journal.capture(store.state); persist()
             let result = try await connection.exchange(Array(journal.records.values)); journal.merge(result.records); apply()
             if offline && result.offline != false {
@@ -199,6 +246,7 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
         Task { @MainActor in guard var value = pairing, sender.name == "Cuda-" + value.id, let host = sender.hostName, sender.port > 0 else { return }
             value.address = "https://" + host.trimmingCharacters(in: CharacterSet(charactersIn: ".")) + ":\(sender.port)"
             pairing = value; try? Keychain.write(String(data: JSONEncoder().encode(value), encoding: .utf8)!, account: "device-sync")
+            await refreshPlaybackConnection()
         }
     }
 }

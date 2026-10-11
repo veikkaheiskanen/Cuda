@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
 const app=path.join(path.resolve(process.argv[2]||'dist/Cuda.app'),'Contents/Resources'),check=path.resolve(process.argv[3]||'macos/build/stream-checks'),profile=fs.mkdtempSync(path.join(os.tmpdir(),'cuda-native-service-check-'));
 fs.chmodSync(profile,0o700);
-const child=spawn(path.join(app,'runtime/node'),[path.join(app,'backend/macos/native-host.js')],{env:{...process.env,RIFF_DATA_DIR:profile,RIFF_YTDLP:path.join(app,'tools/bin/yt-dlp'),RIFF_FFMPEG:path.join(app,'tools/bin/ffmpeg'),RIFF_FFPROBE:path.join(app,'tools/bin/ffprobe'),RIFF_RIFFSPOTIFYPLAYER:path.join(app,'tools/bin/riff-spotify-player')},stdio:['pipe','pipe','pipe']});
+const child=spawn(path.join(app,'runtime/node'),[path.join(app,'backend/macos/native-host.js')],{env:{...process.env,CUDA_NATIVE_TEST_SYNC_PORT:'0',RIFF_DATA_DIR:profile,RIFF_YTDLP:path.join(app,'tools/bin/yt-dlp'),RIFF_FFMPEG:path.join(app,'tools/bin/ffmpeg'),RIFF_FFPROBE:path.join(app,'tools/bin/ffprobe'),RIFF_RIFFSPOTIFYPLAYER:path.join(app,'tools/bin/riff-spotify-player')},stdio:['pipe','pipe','pipe']});
 let buffer='',id=0;const pending=new Map();child.stdout.on('data',data=>{buffer+=data;let line;while((line=buffer.indexOf('\n'))>=0){const v=JSON.parse(buffer.slice(0,line));buffer=buffer.slice(line+1);const cb=pending.get(v.id);if(cb){pending.delete(v.id);v.error?cb.reject(new Error(v.error)):cb.resolve(v.data);}}});child.stderr.resume();
 function rpc(method,args){return new Promise((resolve,reject)=>{const key=++id;pending.set(key,{resolve,reject});child.stdin.write(JSON.stringify({id:key,method,args})+'\n');});}
 (async()=>{try{
@@ -27,8 +27,13 @@ function rpc(method,args){return new Promise((resolve,reject)=>{const key=++id;p
  const sync=await rpc('syncConfigure',{enabled:true});if(!sync.enabled||sync.fingerprint.length!==64)throw Error('Packaged TLS sync setup failed');
  const downloaded=await new Promise((resolve,reject)=>{const req=require('node:https').request({host:'127.0.0.1',port:sync.port,path:'/sync/files/'+metadata.assets[0].hash,rejectUnauthorized:false,headers:{Authorization:'Bearer '+sync.token}},res=>{const cert=res.socket.getPeerCertificate().raw;if(crypto.createHash('sha256').update(cert).digest('hex')!==sync.fingerprint)return reject(Error('Wrong pairing certificate'));const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>res.statusCode===200?resolve(Buffer.concat(chunks)):reject(Error('Paired audio transfer failed')));});req.on('error',reject);req.end();});
  if(crypto.createHash('sha256').update(downloaded).digest('hex')!==metadata.assets[0].hash)throw Error('Paired audio checksum mismatch');
+ const companion=await new Promise((resolve,reject)=>{const req=require('node:https').get({host:'127.0.0.1',port:sync.port,path:'/sync/companion',rejectUnauthorized:false,headers:{Authorization:'Bearer '+sync.token}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>res.statusCode===200?resolve(JSON.parse(Buffer.concat(chunks))):reject(Error('Automatic companion setup failed')));});req.on('error',reject);});
+ if(!companion.port||companion.token===sync.token)throw Error('Streaming capability was not separately scoped');
+ const mobileURL=`http://127.0.0.1:${companion.port}/api/local-track?id=${tracks[0].id}&pair=${companion.token}`;
+ const mobileAudio=await fetch(mobileURL,{headers:{Range:'bytes=0-15'}});if(mobileAudio.status!==206||(await mobileAudio.arrayBuffer()).byteLength!==16)throw Error('Packaged automatic companion range playback failed');
+ if((await fetch(`http://127.0.0.1:${companion.port}/api/library`,{headers:{Authorization:'Bearer '+companion.token}})).status!==404)throw Error('Companion exposed desktop operations');
  await rpc('syncConfigure',{enabled:false});
- console.log('PASS: packaged TLS pairing, two-way Shelf envelope and verified offline-song download');
+ console.log('PASS: packaged TLS pairing, two-way Shelf envelope, verified offline-song download and automatically paired streaming companion');
  const stream=await rpc('api',{path:'/api/stream-info?id='+tracks[0].id+'&platform=local&url='});const url=stream.streamUrl;
  const result=await new Promise((resolve,reject)=>{const test=spawn(check,[url,path.join(app,'tools/bin/cuda-audio-decoder')],{stdio:['ignore','pipe','pipe']});let out='';test.stdout.on('data',d=>out+=d);test.stderr.on('data',d=>out+=d);test.on('exit',code=>code===0?resolve(out):reject(Error(out)));});
  console.log(result.trim());console.log('PASS: packaged private RPC, Discord, encrypted lyrics setup, Genius fallback, API origin validation, import and loopback audio service');

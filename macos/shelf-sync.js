@@ -23,7 +23,8 @@ function validateRecords(input){
 function merge(records,incoming){for(const r of incoming){const old=records[r.key];if(!old||old.clock<r.clock||old.clock===r.clock&&old.device<r.device)records[r.key]=r;}}
 async function fileHash(file){const hash=crypto.createHash('sha256');for await(const chunk of fs.createReadStream(file))hash.update(chunk);return hash.digest('hex');}
 class ShelfSyncService {
- constructor({directory,store,api,emit=()=>{},listenPort=38474}){
+ constructor({directory,store,api,emit=()=>{},listenPort=38474,companion=null}){
+  this.companion=companion;
   this.directory=directory;this.store=store;this.api=api;this.emit=emit;this.listenPort=listenPort;this.records={};this.assets=new Map();this.cache=new Map();this.queue=Promise.resolve();this.config={enabled:false,offline:true,id:crypto.randomUUID(),token:crypto.randomBytes(32).toString('hex')};
   try{this.config={...this.config,...JSON.parse(store.decryptString(fs.readFileSync(path.join(directory,'native-sync-config.enc'))))};}catch{}
   try{this.records=JSON.parse(fs.readFileSync(path.join(directory,'native-sync-records.json'),'utf8'));}catch{}
@@ -49,6 +50,7 @@ class ShelfSyncService {
     await this.scan();this.timer=setInterval(()=>this.serial(async()=>{const changed=await this.scan();if(changed)this.emit({event:'syncChanged'});}).catch(()=>{}),10000);this.timer.unref();
    }catch{this.server?.close();this.server=null;this.config.enabled=false;throw Error('Device sync could not start. Check that port 38474 is free and allow local network access.');}
   }
+  await this.companion?.configure(!!this.server,!!values.reset);
   this.atomic('native-sync-config.enc',this.store.encryptString(JSON.stringify(this.config)));return this.status();
  });}
  status(){const port=this.server?.address()?.port||0;const addresses=Object.values(os.networkInterfaces()).flat().filter(i=>i&&i.family==='IPv4'&&!i.internal&&(/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(i.address))).map(i=>'https://'+i.address+':'+port);
@@ -73,7 +75,11 @@ class ShelfSyncService {
    const supplied=Buffer.from(String(req.headers.authorization||'').replace(/^Bearer /,'')),expected=Buffer.from(this.config.token);
    if(!this.config.enabled||supplied.length!==expected.length||!crypto.timingSafeEqual(supplied,expected))return fail(401,'Pair this Mac again in Settings.');
    const u=new URL(req.url,'https://localhost');res.setHeader('Cache-Control','no-store');
-   if(u.pathname==='/sync/health'&&req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:this.config.id,version:1}));}
+   if(u.pathname==='/sync/health'&&req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:this.config.id,version:1,companion:!!this.companion}));}
+   if(u.pathname==='/sync/companion'&&req.method==='GET'){
+    if(!this.companion)return fail(404,'Update Cuda on your Mac to connect streaming automatically.');
+    res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(this.companion.status()));
+   }
    if(u.pathname==='/sync/exchange'&&req.method==='POST'){
     const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>8000000)return fail(413,'Shelf is too large.');chunks.push(chunk);}
     const input=JSON.parse(Buffer.concat(chunks));const result=await this.exchange(input.records);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));this.emit({event:'syncChanged'});return;
@@ -100,6 +106,6 @@ class ShelfSyncService {
    fail(405,'Unsupported sync request.');
   }catch{if(!res.destroyed)fail(400,'Sync could not finish. Your local music is unchanged; retry when connected.');}
  }
- async close(){clearInterval(this.timer);if(this.server){this.server.closeAllConnections();await new Promise(resolve=>this.server.close(resolve));this.server=null;}}
+ async close(){clearInterval(this.timer);await this.companion?.close();if(this.server){this.server.closeAllConnections();await new Promise(resolve=>this.server.close(resolve));this.server=null;}}
 }
 module.exports={ShelfSyncService,validateRecords,merge,fileHash};

@@ -20,9 +20,18 @@ final class Store: ObservableObject {
     lazy var player: Player = {
         let value = Player(spotify: spotify, localRoot: audioRoot) { [weak self] in self?.companion ?? Companion(address: "", token: "") }
         value.didPlay = { [weak self] track in self?.remember(track) }
+        value.prepareCompanion = { [weak self] in
+            guard let self, !UserDefaults.standard.bool(forKey: "companionManualOverride") else { return }
+            await self.deviceSync.refreshPlaybackConnection()
+        }
         return value
     }()
-    var companion: Companion { Companion(address: UserDefaults.standard.string(forKey: "companionAddress") ?? "", token: Keychain.read("companion")) }
+    var companion: Companion {
+        if !UserDefaults.standard.bool(forKey: "companionManualOverride"), deviceSync.pairing != nil {
+            return deviceSync.playback?.connection ?? Companion(address: "", token: "")
+        }
+        return Companion(address: UserDefaults.standard.string(forKey: "companionAddress") ?? "", token: Keychain.read("companion"))
+    }
     private var searchGeneration = UUID()
     private var favouriteSync: [String: Task<Void, Never>] = [:]
     init() {
@@ -76,12 +85,17 @@ final class Store: ObservableObject {
         let local = Track.unique(state.local + state.favourites + state.playlists.flatMap(\.tracks)).filter { ($0.title + " " + $0.artist).localizedCaseInsensitiveContains(query) }
         results = local
         do { try await Task.sleep(for: .milliseconds(220)); try Task.checkCancellation() } catch { if searchGeneration == key { searching = false }; return }
-        async let publicTracks: [Track] = { [companion] in (try? await companion.search(query)) ?? [] }()
+        async let publicTracks = searchCompanion(query)
         async let spotifyTracks = spotify.searchAvailable(query)
         let remote = await publicTracks + spotifyTracks
         guard key == searchGeneration, !Task.isCancelled else { return }
         results = Track.unique(local + remote); searching = false
         if results.isEmpty { message = "No songs found. Try another search, connect Spotify, or pair your Mac in Settings." }
+    }
+    private func searchCompanion(_ query: String) async -> [Track] {
+        if !UserDefaults.standard.bool(forKey: "companionManualOverride") { await deviceSync.refreshPlaybackConnection() }
+        guard !Task.isCancelled else { return [] }
+        return (try? await companion.search(query)) ?? []
     }
     func refreshRecommendations() async {
         guard !refreshing else { return }; refreshing = true; defer { refreshing = false }

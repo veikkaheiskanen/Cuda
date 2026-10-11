@@ -18,6 +18,7 @@ final class Player: ObservableObject {
     let spotify: Spotify
     var companion: () -> Companion
     var didPlay: ((Track) -> Void)?
+    var prepareCompanion: (() async -> Void)?
     private var audio = AVPlayer()
     private var task: Task<Void, Never>?
     private var watchdog: Task<Void, Never>?
@@ -138,6 +139,8 @@ final class Player: ObservableObject {
                 if track.platform == "local", let file = track.localFile, !file.contains("/"), !file.contains("..") {
                     selected = track; url = localRoot.appendingPathComponent(file)
                 } else {
+                    await prepareCompanion?()
+                    try Task.checkCancellation(); guard generation == key else { return }
                     (selected, url) = try await companion().stream(track, source: source, excluded: Array(excluded))
                 }
                 try Task.checkCancellation(); guard generation == key else { return }
@@ -189,6 +192,11 @@ final class Player: ObservableObject {
         guard !queue.isEmpty else { return }; queueIndex = max(0, queueIndex - 1); play(queue[queueIndex], in: queue)
     }
     func changeSource(_ value: Source) { source = value; if let track = selectedOriginal ?? current { play(track, in: queue) } }
+    func disconnectCompanion() {
+        guard let current, current.platform != "local", current.platform != "spotify" else { return }
+        task?.cancel(); watchdog?.cancel(); generation = UUID(); audio.pause(); audio.replaceCurrentItem(with: nil)
+        playing = false; loading = false
+    }
     private func updateNowPlaying() {
         guard let current, current.platform != "spotify" else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: current.title, MPMediaItemPropertyArtist: current.artist,
