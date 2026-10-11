@@ -17,3 +17,7 @@ Check empty Search and loaded results at 1120 × 780 and approximately 647 × 56
 In Settings, switch transparency off and on in light and dark appearance. The form and heading must share one background; no opaque form rectangle or partial-height material band may remain. The toggle must change the window immediately and persist. With transparency enabled, DEBUG capture's native-ready.json reports opaque=false. The native mini and standalone Settings windows use the same preference. Reduce Transparency forces an opaque system background.
 
 The initial scan found the intrinsic-image clipping issue and short detail pane. The confirmation round passed square bundled fixtures, live remote search thumbnails, empty/loaded Search, narrow Shelf, and light/dark transparency toggles. Audio and account code was unchanged by this patch.
+
+## System accent follow-up (1.0.2)
+
+The fixed blue root tint was removed. Verified against the Mac’s green system accent: Audio sliders, native selection, play/pause, volume and the 50% player glass tint all use green. Native inactive-window styling remains managed by macOS. Artwork colors remain the original artwork. No system preference was changed for this check.

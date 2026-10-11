@@ -8,7 +8,6 @@ struct CudaNativeApp: App {
     var body: some Scene {
         Window("Cuda", id: "main") {
             RootView(store: store, player: store.player)
-                .tint(.blue)
                 .onAppear { Appearance.apply(ProcessInfo.processInfo.environment["CUDA_NATIVE_THEME"] ?? UserDefaults.standard.string(forKey: "native-theme") ?? "system"); AppDelegate.runtime = store.runtime; AppDelegate.player = store.player }
         }.defaultSize(width: 1120, height: 780).windowToolbarStyle(.unified)
         .commands { CudaCommands(store: store); SidebarCommands() }
