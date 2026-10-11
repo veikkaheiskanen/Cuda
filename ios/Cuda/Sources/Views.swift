@@ -288,7 +288,16 @@ struct MiniPlayer: View {
             Button { player.next() } label: { Image(systemName: "forward.end.fill").frame(width: 44, height: 44) }.accessibilityLabel("Next song")
             Menu { ForEach(Source.allCases) { source in Button(source.label) { player.changeSource(source) } } } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }
                 .accessibilityLabel("Audio source, \(player.source.label)").disabled(player.current?.platform == "local")
-        }.padding(10).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }.padding(10).modifier(PlayerMaterial())
+    }
+}
+struct PlayerMaterial: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        } else {
+            content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
     }
 }
 struct NowPlaying: View {

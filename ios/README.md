@@ -43,7 +43,7 @@ The companion binds port **38473** and requires the pairing key for every reques
 
 ## Build and verify
 
-Requires Xcode with the iOS SDK, XcodeGen, and access to the official Spotify Swift Package repository:
+Requires Xcode 26 or later with the iOS SDK, XcodeGen, and access to the official Spotify Swift Package repository. The app runs on iOS 17 or later; iOS 26 uses Apple's native Liquid Glass for the mini player and new system navigation, with system-material fallback on older iOS:
 
 ```sh
 brew install xcodegen

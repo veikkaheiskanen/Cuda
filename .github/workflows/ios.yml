@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -45,10 +45,12 @@ jobs:
           xcrun simctl list devices available -j > build/devices.json
           PHONE=$(python3 -c 'import json; d=json.load(open("build/devices.json")); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
           echo "$PHONE" > build/phone-id
+          xcrun simctl boot "$PHONE" || true
+          xcrun simctl bootstatus "$PHONE" -b
           xcodebuild -project Cuda.xcodeproj -scheme Cuda -configuration Debug \
             -destination "platform=iOS Simulator,id=$PHONE" -derivedDataPath build/simulator \
-            -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO test \
-            > build-simulator.log 2>&1 || { tail -150 build-simulator.log; exit 1; }
+            -parallel-testing-enabled NO -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO test \
+            2>&1 | tee build-simulator.log
       - name: Capture iPhone and iPad layouts
         run: bash ios/scripts/screenshots.sh
       - name: Upload IPA and verification
