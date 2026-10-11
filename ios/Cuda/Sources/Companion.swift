@@ -41,7 +41,7 @@ struct Companion {
             // Exclude Mac-native Spotify: its audio is played locally by the official iOS SDK.
             let body = try JSONSerialization.data(withJSONObject: ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track)), "exclude": excluded, "mobile": true])
             let value: PlaybackResponse = try await request("/api/playback-source", body: body)
-            guard let selected = value.track, selected.platform != "spotify", let raw = value.stream?.streamUrl ?? value.stream?.url, let url = URL(string: raw) else {
+            guard let selected = value.track, selected.platform != "spotify", let raw = value.stream?.proxyUrl ?? value.stream?.streamUrl ?? value.stream?.url, let url = URL(string: raw) else {
                 throw CudaError.message(value.error ?? "This source could not start. Choose another source and retry.")
             }
             return (selected, url)
@@ -52,7 +52,7 @@ struct Companion {
             guard let match = result.track else { throw CudaError.message(result.error ?? "No matching recording on this source.") }; selected = match
         }
         let value: StreamInfo = try await request("/api/stream-info", items: [.init(name: "id", value: selected.id), .init(name: "url", value: selected.url), .init(name: "platform", value: selected.platform)])
-        guard let raw = value.streamUrl ?? value.url, let url = URL(string: raw) else { throw CudaError.message(value.error ?? "No playable audio was found.") }
+        guard let raw = value.proxyUrl ?? value.streamUrl ?? value.url, let url = URL(string: raw) else { throw CudaError.message(value.error ?? "No playable audio was found.") }
         return (selected, url)
     }
 }

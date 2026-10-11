@@ -70,17 +70,29 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     func next() { remote?.playerAPI?.skip(toNext: report) }
     func previous() { remote?.playerAPI?.skip(toPrevious: report) }
     private var report: SPTAppRemoteCallback { { [weak self] _, error in if let error { self?.message = error.localizedDescription } } }
-    func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
+    nonisolated func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
+        Task { @MainActor in self.established(appRemote) }
+    }
+    private func established(_ appRemote: SPTAppRemote) {
+        guard appRemote === remote else { return }
         connected = true; message = "Connected to Spotify on this device."
         appRemote.playerAPI?.delegate = self
         appRemote.playerAPI?.subscribe(toPlayerState: report)
         if let uri = pendingURI { pendingURI = nil; appRemote.playerAPI?.play(uri, callback: report) }
     }
-    func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
-        connected = false; message = "Spotify connection stopped. Tap Connect Spotify to resume."
+    nonisolated func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
+        Task { @MainActor in
+            guard appRemote === self.remote else { return }
+            self.connected = false; self.message = "Spotify connection stopped. Tap Connect Spotify to resume."
+        }
     }
-    func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) { connected = false }
-    func playerStateDidChange(_ state: SPTAppRemotePlayerState) {
+    nonisolated func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
+        Task { @MainActor in if appRemote === self.remote { self.connected = false } }
+    }
+    nonisolated func playerStateDidChange(_ state: SPTAppRemotePlayerState) {
+        Task { @MainActor in self.receive(state) }
+    }
+    private func receive(_ state: SPTAppRemotePlayerState) {
         guard acceptsState else { return }; lastState = state
         let item = state.track
         let id = item.uri.split(separator: ":").last.map(String.init) ?? item.uri
@@ -126,6 +138,10 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         let album = json["album"] as? [String: Any] ?? [:]
         let image = (album["images"] as? [[String: Any]])?.first?["url"] as? String
         return Track(id: id, title: title, artist: artists, platform: "spotify", url: "https://open.spotify.com/track/" + id, duration: (json["duration_ms"] as? Double).map { $0 / 1000 }, thumbnail: image)
+    }
+    func searchAvailable(_ query: String) async -> [Track] {
+        guard hasToken else { return [] }
+        return (try? await search(query)) ?? []
     }
     func search(_ query: String) async throws -> [Track] {
         var c = URLComponents(); c.queryItems = [.init(name: "q", value: query), .init(name: "type", value: "track"), .init(name: "limit", value: "10")]

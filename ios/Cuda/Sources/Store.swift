@@ -22,6 +22,7 @@ final class Store: ObservableObject {
     }()
     var companion: Companion { Companion(address: UserDefaults.standard.string(forKey: "companionAddress") ?? "", token: Keychain.read("companion")) }
     private var searchGeneration = UUID()
+    private var favouriteSync: [String: Task<Void, Never>] = [:]
     init() {
         root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Cuda", isDirectory: true)
         audioRoot = root.appendingPathComponent("Audio", isDirectory: true)
@@ -41,7 +42,11 @@ final class Store: ObservableObject {
         if liked { state.favourites.append(track) } else { state.favourites.removeAll { $0.key == track.key } }
         save()
         if track.platform == "spotify", spotify.hasToken {
-            Task { do { try await spotify.like(track, liked: liked) } catch { message = "Saved on your Shelf. Spotify sync failed: " + error.localizedDescription } }
+            let previous = favouriteSync[track.key]
+            favouriteSync[track.key] = Task {
+                _ = await previous?.result
+                do { try await spotify.like(track, liked: liked) } catch { message = "Saved on your Shelf. Spotify sync failed: " + error.localizedDescription }
+            }
         }
     }
     func createPlaylist(name: String, description: String) {
@@ -66,7 +71,7 @@ final class Store: ObservableObject {
         results = local
         do { try await Task.sleep(for: .milliseconds(220)); try Task.checkCancellation() } catch { if searchGeneration == key { searching = false }; return }
         async let publicTracks: [Track] = { [companion] in (try? await companion.search(query)) ?? [] }()
-        async let spotifyTracks: [Track] = { [spotify] in spotify.hasToken ? ((try? await spotify.search(query)) ?? []) : [] }()
+        async let spotifyTracks = spotify.searchAvailable(query)
         let remote = await publicTracks + spotifyTracks
         guard key == searchGeneration, !Task.isCancelled else { return }
         results = Track.unique(local + remote); searching = false
@@ -79,7 +84,7 @@ final class Store: ObservableObject {
         guard let seed else { recommendations = []; return }
         let query = seed.artist == "Unknown artist" ? seed.title : seed.artist
         async let remote: [Track] = { [companion] in (try? await companion.search(query)) ?? [] }()
-        async let spotifyTracks: [Track] = { [spotify] in spotify.hasToken ? ((try? await spotify.search(query)) ?? []) : [] }()
+        async let spotifyTracks = spotify.searchAvailable(query)
         let tracks = await remote + spotifyTracks
         let recent = Set(state.history.prefix(8).map(\.key))
         recommendations = Array(Track.unique(tracks + taste).filter { !recent.contains($0.key) }.prefix(20))

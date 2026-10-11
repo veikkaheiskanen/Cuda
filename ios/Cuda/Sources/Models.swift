@@ -47,5 +47,5 @@ enum Source: String, CaseIterable, Identifiable {
     }
 }
 struct SearchResponse: Decodable { var tracks: [Track]?; var error: String? }
-struct StreamInfo: Decodable { var streamUrl: String?; var url: String?; var error: String? }
+struct StreamInfo: Decodable { var streamUrl: String?; var proxyUrl: String?; var url: String?; var error: String? }
 struct PlaybackResponse: Decodable { var track: Track?; var stream: StreamInfo?; var error: String? }

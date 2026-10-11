@@ -45,6 +45,7 @@ function createBridge({ token, upstream = 'http://127.0.0.1:38472', allowedHosts
     }
     if (routes.get(incoming.pathname) !== req.method) return fail(404, 'This endpoint is unavailable on mobile.');
     incoming.searchParams.delete('pair');
+    if (incoming.pathname === '/api/stream-info') incoming.searchParams.set('mobile', '1');
     const origin = incoming.origin;
     const headers = { accept: req.headers.accept || '*/*' };
     if (req.headers.range) headers.range = req.headers.range;
@@ -88,7 +89,7 @@ function createBridge({ token, upstream = 'http://127.0.0.1:38472', allowedHosts
     });
   });
 }
-if (require.main === module) {
+async function main() {
   // Pairing keys are local secrets and are never included in source or build artifacts.
   const dir = process.env.CUDA_PAIRING_DIR || path.join(os.homedir(), 'Library', 'Application Support', 'Cuda iOS Companion');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -99,13 +100,25 @@ if (require.main === module) {
   const interfaces = Object.values(os.networkInterfaces()).flat().filter(item => item && item.family === 'IPv4' && !item.internal);
   const allowedHosts = new Set(['localhost', '127.0.0.1', ...interfaces.map(item => item.address)]);
   const port = Number(process.env.CUDA_IOS_PORT) || 38473;
-  const server = createBridge({ token, allowedHosts });
+  // Run the current resolver independently of the installed desktop version.
+  // Keep mobile cache/state separate, and reuse verified tools from Cuda.app.
+  process.env.RIFF_DATA_DIR ||= path.join(dir, 'Media');
+  for (const name of ['yt-dlp', 'ffmpeg', 'ffprobe']) {
+    const key = 'RIFF_' + name.replace(/[^a-z0-9]/gi, '').toUpperCase();
+    const bundled = path.join('/Applications/Cuda.app/Contents/Resources/bin/bin', name);
+    if (!process.env[key] && fs.existsSync(bundled)) process.env[key] = bundled;
+  }
+  const { startServer, stopServer } = require('../server');
+  const upstreamPort = await startServer(0);
+  const server = createBridge({ token, allowedHosts, upstream: 'http://127.0.0.1:' + upstreamPort });
   server.listen(port, '0.0.0.0', () => {
-    console.log('Cuda iOS companion is ready. Keep Cuda open on this Mac.');
+    console.log('Cuda iOS companion is ready. Keep this companion running and your Mac awake.');
     for (const item of interfaces) console.log('Address: http://' + item.address + ':' + port);
     console.log('Pairing key: ' + token);
     console.log('Enter this address and key in Cuda for iOS → Settings → Mac companion.');
   });
-  server.on('error', error => { console.error('Companion could not start: ' + error.message); process.exitCode = 1; });
+  server.on('error', async error => { console.error('Companion could not start: ' + error.message); await stopServer(); process.exitCode = 1; });
+  for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { server.closeAllConnections(); server.close(); await stopServer(); process.exit(0); });
 }
+if (require.main === module) main().catch(error => { console.error('Companion could not start: ' + error.message); process.exitCode = 1; });
 module.exports = { createBridge, authenticated, rewrite };

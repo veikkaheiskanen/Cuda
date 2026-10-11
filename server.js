@@ -660,15 +660,17 @@ async function downloadTrackToDisk(trackUrl, trackId, platform, meta = {}) {
   });
 }
 
-async function resolveAudioStream(trackUrl, trackId, platform, refresh = false) {
+const IOS_AUDIO_FORMAT = "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[acodec^=aac]/bestaudio[protocol*=m3u8]/best[ext=mp4]";
+function mobileCachedFile(file, mobile) { return file && (!mobile || /\.(m4a|mp3|aac|wav|mp4|aif|aiff|caf)$/i.test(file)); }
+async function resolveAudioStream(trackUrl, trackId, platform, refresh = false, mobile = false) {
   if (platform === 'spotify') throw new Error('Spotify plays through the native player.');
   if (!trackUrl) throw new Error('This track has no playable source URL.');
-  const key = `${platform}:${cleanTrackId(trackId)}:${trackUrl}`;
+  const key = `${platform}:${cleanTrackId(trackId)}:${trackUrl}:${mobile ? "ios" : "desktop"}`;
   const cached = streamUrlCache.get(key);
   if (!refresh && cached?.expiresAt > Date.now()) return cached.data;
   if (resolvingStreams.has(key)) return resolvingStreams.get(key);
   const task = (async () => {
-    const raw = await executeYtDlp(['--dump-single-json', '--skip-download', '--no-playlist', '-f', AUDIO_FORMAT, trackUrl], 30000);
+    const raw = await executeYtDlp(['--dump-single-json', '--skip-download', '--no-playlist', '-f', mobile ? IOS_AUDIO_FORMAT : AUDIO_FORMAT, trackUrl], 30000);
     const info=JSON.parse(raw);
     const stream = streamFromInfo(info);
     const token = crypto.randomBytes(18).toString('hex');
@@ -907,14 +909,15 @@ async function handleVibeRecommendations(req, res, payload) {
 }
 
 async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube', title = '', artist = '', duration = 0, thumbnail = '') {
+  const mobile = url.parse(req.url, true).query.mobile === '1';
   const cleanId = cleanTrackId(trackId);
   const cachedFile = await findCachedFile(cleanId);
-  if (cachedFile) {
+  if (mobileCachedFile(cachedFile, mobile)) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ success: true, isLocal: true, streamUrl: `http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanId)}` }));
   }
   try {
-    const data = await resolveAudioStream(trackUrl, cleanId, platform, parsedRefresh(req));
+    const data = await resolveAudioStream(trackUrl, cleanId, platform, parsedRefresh(req), mobile);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
   } catch (error) {
@@ -1637,7 +1640,7 @@ const server = http.createServer(async (req, res) => {
         const excluded=new Set(Array.isArray(payload.exclude)?payload.exclude:[]);
         const usable=t=>t.platform!=='spotify'||(!payload.mobile && status.playbackConnected);
         const cached=await findCachedFile(original.id);
-        if(cached && !payload.refresh){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:original,stream:{success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(original.id))}`}}));}
+        if(mobileCachedFile(cached, payload.mobile) && !payload.refresh){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:original,stream:{success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(original.id))}`}}));}
         const native=[original,...known].find(t=>t.playable!==false&&t.platform==='spotify'&&usable(t)&&!excluded.has(t.platform+':'+t.id));
         if(native){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:{...native,alternatives:[original,...known].filter(t=>t!==native)}}));}
         const resolve=async t=>{
@@ -1645,8 +1648,8 @@ const server = http.createServer(async (req, res) => {
           if(!['youtube','ytmusic','soundcloud'].includes(t.platform))throw new Error('Unsupported audio source.');
           if(!/^https?:\/\//.test(t.url))throw new Error('Invalid source URL.');
           const file=await findCachedFile(t.id);
-          if(file&&!payload.refresh)return {success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(t.id))}`};
-          return resolveAudioStream(t.url,t.id,t.platform,Boolean(payload.refresh));
+          if(mobileCachedFile(file, payload.mobile)&&!payload.refresh)return {success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(t.id))}`};
+          return resolveAudioStream(t.url,t.id,t.platform,Boolean(payload.refresh),Boolean(payload.mobile));
         };
         const discover=async add=>{
           const sink={destroyed:false,writeHead(){},write(batch){try{const result=JSON.parse(batch);add(result.tracks.flatMap(t=>[t,...(t.alternatives||[])]).filter(usable));}catch{}},end(){}};

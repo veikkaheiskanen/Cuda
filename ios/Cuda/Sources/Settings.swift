@@ -35,7 +35,7 @@ struct SettingsView: View {
                 Button { Task { await pair() } } label: { HStack { Text("Pair Mac"); if testing { Spacer(); ProgressView() } } }.disabled(testing)
                 Text(connectionStatus).font(.subheadline).foregroundStyle(.secondary)
             } header: { Text("Mac companion") } footer: {
-                Text("Open Cuda on your Mac, start the iOS companion from the Cuda source project, and enter the address and pairing key it shows. Your Mac must stay awake while resolving and serving public streams. Local audio and Spotify don’t need this connection.")
+                Text("Start the iOS companion from the Cuda source project on your Mac, and enter the address and pairing key it shows. Your Mac must stay awake while resolving and serving public streams. Local audio and Spotify don’t need this connection.")
             }
             Section("About") {
                 Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)

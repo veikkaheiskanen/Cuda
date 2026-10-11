@@ -34,12 +34,12 @@ The app requests only remote playback and library/playlist access. It never asks
 
 ## Pair public streaming sources
 
-1. Keep Cuda for Mac open. It serves its existing API on `127.0.0.1:38472`.
+1. Install Cuda for Mac so the companion can reuse its bundled extraction tools, or install `yt-dlp`, FFmpeg, and FFprobe yourself. The companion runs its own current resolver; the desktop app does not need to be open.
 2. In the project root, with Node 22 or later installed, run **`npm run ios:bridge`**.
 3. The companion prints a LAN address and a random pairing key. Enter them in Cuda for iOS → Settings → Mac companion → **Pair Mac**. Both devices need to be on the same Wi-Fi. Allow incoming connections if macOS asks.
 4. Search and play public sources on your phone. Keep the Mac awake while listening.
 
-The companion binds port **38473** and requires the pairing key for every request and every media segment. It allows only search and playback endpoints; desktop mutation/download/account endpoints are blocked. Keys are generated on first run, stored outside the repository, and remain on your devices. The app stores its pairing key in iOS Keychain. Never publish a pairing key or expose the companion port to the internet. HTTP is allowed in the app only for private network IPs and `.local` hosts; public companion URLs must use HTTPS. A trusted LAN is required because local HTTP is not encrypted. The bridge currently targets the default Mac server port; an occupied port must be resolved before pairing.
+The companion binds port **38473** and requires the pairing key for every request and every media segment. It allows only search and playback endpoints; desktop mutation/download/account endpoints are blocked. Keys are generated on first run, stored outside the repository, and remain on your devices. Mobile caches are stored separately from your Mac Shelf. The app stores its pairing key in iOS Keychain. Never publish a pairing key or expose the companion port to the internet. HTTP is allowed in the app only for private network IPs and `.local` hosts; public companion URLs must use HTTPS. A trusted LAN is required because local HTTP is not encrypted. The bridge starts the companion resolver on an automatically assigned loopback port, avoiding conflicts with the desktop app.
 
 ## Build and verify
 
