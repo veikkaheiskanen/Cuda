@@ -1,8 +1,10 @@
 import SwiftUI
+import UIKit
 
 @main
 struct CudaApp: App {
-    @StateObject private var store = Store()
+    @StateObject private var store = Store.shared
+    @UIApplicationDelegateAdaptor(CudaApplicationDelegate.self) private var delegate
     @Environment(\.scenePhase) private var phase
     @AppStorage("appearance") private var appearance = "system"
     var body: some Scene {
@@ -20,11 +22,18 @@ struct CudaApp: App {
                     if phase == .background { store.spotify.background(); store.deviceSync.activate(false) }
                 }
                 .onAppear {
-                    store.deviceSync.registerBackground(); store.deviceSync.activate(true)
+                    store.deviceSync.activate(true)
                     #if DEBUG
                     store.seedPreview()
                     #endif
                 }
         }
+    }
+}
+
+@MainActor
+final class CudaApplicationDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        Store.shared.deviceSync.registerBackground(); return true
     }
 }

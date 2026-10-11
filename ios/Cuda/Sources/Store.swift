@@ -4,6 +4,7 @@ import CryptoKit
 
 @MainActor
 final class Store: ObservableObject {
+    static let shared = Store()
     @Published var state = CollectionState()
     @Published var results: [Track] = []
     @Published var recommendations: [Track] = []

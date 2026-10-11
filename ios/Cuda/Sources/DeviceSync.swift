@@ -135,6 +135,7 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
                     let ext = file.pathExtension.lowercased(); guard Self.extensions.contains(ext) else { continue }
                     progress = "Sending \(track.title)…"
                     var request = try connection.request("/sync/files/" + hash + "?ext=" + ext, method: "PUT")
+                    request.setValue(String((try file.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0), forHTTPHeaderField: "Content-Length")
                     request.setValue(try JSONEncoder().encode(ShelfSyncJournal.clean(track)).base64EncodedString(), forHTTPHeaderField: "X-Cuda-Track")
                     let (_, response) = try await connection.session.upload(for: request, fromFile: file); try connection.validate(response)
                 }
