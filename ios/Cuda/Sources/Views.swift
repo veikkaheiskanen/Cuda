@@ -35,6 +35,7 @@ struct RootView: View {
         .task {
             #if DEBUG
             if ProcessInfo.processInfo.environment["CUDA_DEMO"] == "1" {
+                store.seedPreview()
                 if ProcessInfo.processInfo.environment["CUDA_PREVIEW_PLAYER"] == "1", let track = store.state.history.first {
                     player.play(track, in: store.state.history)
                     expanded = true
