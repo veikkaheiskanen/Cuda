@@ -77,7 +77,8 @@ final class CudaTests: XCTestCase {
         do {
             let paired = try SyncPairing.parse(link)
             await sync.pair(paired)
-            XCTAssertEqual(sync.playback?.macID, paired.id)
+            XCTAssertEqual(sync.pairing?.id, paired.id, sync.message)
+            XCTAssertEqual(sync.playback?.macID, paired.id, sync.playbackStatus)
             XCTAssertNotEqual(store.companion.token, paired.key)
             XCTAssertEqual(store.companion.address, sync.playback?.address)
             let results = try await store.companion.search("original fixture")

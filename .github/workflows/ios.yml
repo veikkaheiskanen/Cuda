@@ -61,7 +61,8 @@ jobs:
           xcrun simctl bootstatus "$PHONE" -b
           xcodebuild -project Cuda.xcodeproj -scheme Cuda -configuration Debug \
             -destination "platform=iOS Simulator,id=$PHONE" -derivedDataPath build/simulator \
-            -parallel-testing-enabled NO -resultBundlePath build/TestResults.xcresult CODE_SIGNING_ALLOWED=NO test \
+            -parallel-testing-enabled NO -resultBundlePath build/TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual test \
             2>&1 | tee build-simulator.log
       - name: Capture iPhone and iPad layouts
         run: bash ios/scripts/screenshots.sh

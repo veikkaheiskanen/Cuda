@@ -29,7 +29,7 @@ function rpc(method,args){return new Promise((resolve,reject)=>{const key=++id;p
  if(crypto.createHash('sha256').update(downloaded).digest('hex')!==metadata.assets[0].hash)throw Error('Paired audio checksum mismatch');
  const companion=await new Promise((resolve,reject)=>{const req=require('node:https').get({host:'127.0.0.1',port:sync.port,path:'/sync/companion',rejectUnauthorized:false,headers:{Authorization:'Bearer '+sync.token}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>res.statusCode===200?resolve(JSON.parse(Buffer.concat(chunks))):reject(Error('Automatic companion setup failed')));});req.on('error',reject);});
  if(!companion.port||companion.token===sync.token)throw Error('Streaming capability was not separately scoped');
- const mobileURL=`http://127.0.0.1:${companion.port}/api/local-track?id=${tracks[0].id}&pair=${companion.token}`;
+ const mobileURL=`http://127.0.0.1:${companion.port}/api/library-file?id=${tracks[0].id}&pair=${companion.token}`;
  const mobileAudio=await fetch(mobileURL,{headers:{Range:'bytes=0-15'}});if(mobileAudio.status!==206||(await mobileAudio.arrayBuffer()).byteLength!==16)throw Error('Packaged automatic companion range playback failed');
  if((await fetch(`http://127.0.0.1:${companion.port}/api/library`,{headers:{Authorization:'Bearer '+companion.token}})).status!==404)throw Error('Companion exposed desktop operations');
  await rpc('syncConfigure',{enabled:false});
