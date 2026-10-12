@@ -5,6 +5,13 @@ const artistKey = t => normalize(String(t.artist || '').split(/,| & /)[0]);
 function genreName(value) { const name=value.trim().toLowerCase(); return ({'hip-hop/rap':'hip hop','hip-hop':'hip hop','hip-hop/rap music':'hip hop','r&b/soul':'r&b','rnb':'r&b'})[name] || name; }
 const credits = name => String(name || '').split(/\s*,\s*|\s*&\s*/).map(normalize).filter(Boolean);
 const sameCredits = (a,b) => credits(a).some(name=>credits(b).includes(name));
+// Featured performers are credits, not a different mix. Preserve all other
+// annotations so a remix, live version or instrumental cannot supply its tags.
+const recordingTitle = (title, artist = '') => {
+  const value = normalize(String(title || '').replace(/\s*[([](?:feat\.?|ft\.?|featuring)\s+[^)\]]*[)\]]/gi,''));
+  const performer = artistKey({artist});
+  return performer && value.startsWith(performer+' ') ? value.slice(performer.length+1) : value;
+};
 const genresOf = t => [...new Set((Array.isArray(t.genres) ? t.genres : []).filter(g => typeof g === 'string' && g.length <= 64).map(genreName).filter(Boolean))];
 function profileFor(history, favourites, playlists = []) {
   const artists = new Map(), genres = new Map(), listened = new Map();
@@ -80,21 +87,21 @@ function createGenreLookup({directory, country = 'US', fetcher = fetch, now = Da
       const response = await fetcher('https://itunes.apple.com/search?'+new URLSearchParams({term:track.artist.split(/,| & /)[0]+' '+track.title,entity:'song',limit:'5',country}), {signal:AbortSignal.timeout(5000)});
       if (!response.ok) return [];
       const result = await response.json();
-      const title = normalize(track.title).replace(artistKey(track)+' ','');
-      const match = (result.results || []).find(t => normalize(t.trackName) === title && sameCredits(t.artistName, track.artist));
+      const title = recordingTitle(track.title, track.artist);
+      const match = (result.results || []).find(t => recordingTitle(t.trackName) === title && sameCredits(t.artistName, track.artist));
       return match?.primaryGenreName ? [genreName(match.primaryGenreName)] : [];
     }); catalogTail=job.catch(()=>{}); return job;
   }
   return async function enrich(track) {
     if (genresOf(track).length || !artistKey(track) || /^unknown/.test(artistKey(track))) return track;
-    const key = 'v2|'+normalize(track.artist)+'|'+normalize(track.title)+'|'+country;
+    const key = 'v3|'+normalize(track.artist)+'|'+normalize(track.title)+'|'+country;
     const saved = cache[key];
     if (saved && saved.expires > now()) return {...track, genres:saved.genres};
     try {
-      const title = normalize(track.title).replace(new RegExp('^'+artistKey(track).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+' '),'');
+      const title = recordingTitle(track.title, track.artist);
       const query = 'recording:"'+title.replace(/"/g,'')+'" AND artist:"'+artistKey(track).replace(/"/g,'')+'"';
       const result = await request('recording?'+new URLSearchParams({query,fmt:'json',limit:'5'}));
-      const match = (result.recordings || []).find(r => normalize(r.title) === title && (r['artist-credit'] || []).some(a => normalize(a.artist?.name) === artistKey(track)));
+      const match = (result.recordings || []).find(r => recordingTitle(r.title) === title && (r['artist-credit'] || []).some(a => normalize(a.artist?.name) === artistKey(track)));
       const credit = match?.['artist-credit']?.find(a => normalize(a.artist?.name) === artistKey(track));
       let genres = [];
       if (credit?.artist?.id && /^[a-f0-9-]{36}$/.test(credit.artist.id)) {

@@ -62,3 +62,14 @@ test('genre lookup matches collaboration credits in either order and searches th
  const lookup=createGenreLookup({country:'FI',pause:async()=>{},fetcher:async url=>{const u=new URL(url);if(u.hostname==='itunes.apple.com')term=u.searchParams.get('term');return{ok:true,json:async()=>u.hostname==='itunes.apple.com'?{results:[{trackName:'Song',artistName:'Second & First',primaryGenreName:'Hip-Hop/Rap'}]}:{recordings:[]}};}});
  assert.deepEqual((await lookup(track('duet','First, Second',[],'Song'))).genres,['hip hop']);assert.equal(term,'First Song');
 });
+test('catalogue featured credits match a short title without accepting another recording or artist',async()=>{
+ const lookup=createGenreLookup({pause:async()=>{},fetcher:async url=>({ok:true,json:async()=>url.includes('itunes')?{results:[{trackName:'Song (feat. Guest)',artistName:'Artist',primaryGenreName:'Pop'}]}:{recordings:[]}})});
+ assert.deepEqual((await lookup(track('short','Artist, Guest',[],'Song'))).genres,['pop']);
+ assert.deepEqual((await lookup(track('full','Artist',[],'Song [ft. Guest]'))).genres,['pop']);
+ assert.deepEqual((await lookup(track('remix','Artist',[],'Song (Remix)'))).genres,[]);
+ assert.deepEqual((await lookup(track('other','Different Artist',[],'Song'))).genres,[]);
+});
+test('MusicBrainz featured credits keep the verified performer genre match',async()=>{
+ const lookup=createGenreLookup({pause:async()=>{},fetcher:async url=>({ok:true,json:async()=>url.includes('recording?')?{recordings:[{title:'Song (featuring Guest)','artist-credit':[{artist:{name:'Artist',id:'11111111-1111-1111-1111-111111111111'}}]}]}:{genres:[{name:'Hip hop',count:3}]}})});
+ assert.deepEqual((await lookup(track('short','Artist, Guest',[],'Song'))).genres,['hip hop']);
+});
