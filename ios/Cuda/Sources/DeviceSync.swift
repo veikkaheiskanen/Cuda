@@ -74,7 +74,7 @@ struct SyncConnection {
         guard job.id.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else { throw CudaError.message("Invalid offline download.") }
         for _ in 0..<240 {
             try Task.checkCancellation()
-            if job.status == "ready" { break }
+            if job.status == "ready", job.filename != nil { break }
             if job.status == "failed" { throw CudaError.message(job.error ?? "This public source could not be downloaded.") }
             try await Task.sleep(for: .milliseconds(500))
             let (data, response) = try await session.data(for: request("/sync/offline-status?id=" + job.id)); try validate(response)

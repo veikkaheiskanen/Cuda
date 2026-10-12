@@ -330,7 +330,7 @@ struct MiniPlayer: View {
         HStack(spacing: 8) {
             Button(action: expand) {
                 HStack(spacing: 12) {
-                    Cover(track: player.current, image: player.current?.platform == "spotify" ? spotify.artwork : nil).frame(width: 44, height: 44)
+                    Cover(track: player.current, image: player.usesSpotify && spotify.artworkTrackID == player.current?.id ? spotify.artwork : nil).frame(width: 44, height: 44)
                     VStack(alignment: .leading, spacing: 2) { Text(player.current?.title ?? "").font(.subheadline.weight(.semibold)).lineLimit(1); Text(player.current?.artist ?? "").font(.caption).foregroundStyle(.secondary).lineLimit(1) }.frame(maxWidth: .infinity, alignment: .leading)
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel("Open now playing")
@@ -373,7 +373,7 @@ struct NowPlaying: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }; ToolbarItem(placement: .topBarLeading) { NavigationLink { TrackList(title: "Up next", tracks: player.queue, store: store, player: player) } label: { Image(systemName: "list.bullet") }.accessibilityLabel("Up next") } }
         }
     }
-    private var cover: some View { SpotifyCover(track: player.current, spotify: store.spotify) }
+    private var cover: some View { SpotifyCover(track: player.current, spotify: store.spotify, usesSpotify: player.usesSpotify) }
     private var controls: some View {
         VStack(spacing: 22) {
             HStack(alignment: .top, spacing: 16) {
@@ -402,7 +402,8 @@ struct NowPlaying: View {
 struct SpotifyCover: View {
     var track: Track?
     @ObservedObject var spotify: Spotify
-    var body: some View { Cover(track: track, image: track?.platform == "spotify" ? spotify.artwork : nil) }
+    var usesSpotify = true
+    var body: some View { Cover(track: track, image: usesSpotify && spotify.artworkTrackID == track?.id ? spotify.artwork : nil) }
 }
 struct SystemVolume: UIViewRepresentable {
     func makeUIView(context: Context) -> MPVolumeView { let view = MPVolumeView(); view.showsRouteButton = false; return view }

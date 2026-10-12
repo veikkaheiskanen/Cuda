@@ -24,6 +24,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         let own = UserDefaults.standard.string(forKey: "spotifyClientID") ?? ""
         return own.isEmpty ? macAccount?.clientID ?? "" : own
     }
+    var artworkTrackID: String { artworkKey.split(separator: ":").last.map(String.init) ?? "" }
     var hasToken: Bool { !accessToken.isEmpty || macAccount?.usable == true }
     func applyMacSetup(_ value: IntegrationSetup.SpotifyAccount?) {
         macAccount = UserDefaults.standard.object(forKey: "sync-accounts") as? Bool == false ? nil : value
