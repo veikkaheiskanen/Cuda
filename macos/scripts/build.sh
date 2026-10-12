@@ -35,6 +35,9 @@ icon_assets="${CUDA_NATIVE_ICON_ASSETS:-$build/icon-assets}"
 if xcrun --find actool >/dev/null 2>&1; then
   bash "$root/macos/scripts/compile-icons.sh" "$icon_assets"
 fi
+if [[ ! -f "$icon_assets/Assets.car" && -f "$root/macos/Cuda/Resources/IconAssets/Assets.car" ]]; then
+  icon_assets="$root/macos/Cuda/Resources/IconAssets"
+fi
 if [[ -f "$icon_assets/Assets.car" ]]; then
   cp "$icon_assets/Assets.car" "$app/Contents/Resources/"
   /usr/libexec/PlistBuddy -c 'Add :CFBundleIconName string Cuda' "$app/Contents/Info.plist"
