@@ -548,7 +548,7 @@ function directYoutubeSearch(query, filterSpam = false) {
   });
 }
 
-function executeYtDlp(args, timeoutMs = 25000) {
+function executeYtDlp(args, timeoutMs = 25000, requireSuccess = false) {
   return new Promise((resolve, reject) => {
     const cmd = ytDlpCommand(args);
     const proc = spawnTool(cmd.bin, cmd.args, { windowsHide: true, env: cmd.env });
@@ -570,7 +570,7 @@ function executeYtDlp(args, timeoutMs = 25000) {
 
     proc.on('close', (code) => {
       if (timer) clearTimeout(timer);
-      if (code === 0 || stdout.trim().length > 0) {
+      if (code === 0 || !requireSuccess && stdout.trim().length > 0) {
         resolve(stdout);
       } else {
         reject(new Error(stderr || `yt-dlp exited with code ${code}`));
@@ -670,7 +670,7 @@ async function resolveAudioStream(trackUrl, trackId, platform, refresh = false, 
   if (!refresh && cached?.expiresAt > Date.now()) return cached.data;
   if (resolvingStreams.has(key)) return resolvingStreams.get(key);
   const task = (async () => {
-    const raw = await executeYtDlp(['--dump-single-json', '--skip-download', '--no-playlist', '-f', mobile ? IOS_AUDIO_FORMAT : AUDIO_FORMAT, trackUrl], 30000);
+    const raw = await executeYtDlp(['--dump-single-json', '--skip-download', '--no-playlist', '-f', mobile ? IOS_AUDIO_FORMAT : AUDIO_FORMAT, trackUrl], 30000, true);
     const info=JSON.parse(raw);
     const stream = streamFromInfo(info);
     const token = crypto.randomBytes(18).toString('hex');

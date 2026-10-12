@@ -65,6 +65,15 @@ struct SyncConnection {
         let (data, response) = try await session.data(for: request("/sync/health")); try validate(response)
         let value = try JSONDecoder().decode(Health.self, from: data); guard value.version == 1, value.id == pairing.id else { throw CudaError.message("This is a different Mac. Pair it in Settings.") }; return value.id
     }
+    func integrations() async throws -> IntegrationSetup? {
+        var req = try request("/sync/integrations"); req.timeoutInterval = 20
+        let (data, response) = try await session.data(for: req)
+        if (response as? HTTPURLResponse)?.statusCode == 404 { return nil }
+        try validate(response)
+        guard data.count < 32_000 else { throw CudaError.message("Account setup response was too large.") }
+        let value = try JSONDecoder().decode(IntegrationSetup.self, from: data)
+        try value.validate(for: pairing.id); return value
+    }
     func companion() async throws -> PairedCompanion? {
         var req = try request("/sync/companion"); req.timeoutInterval = 5
         let (data, response) = try await session.data(for: req)
@@ -83,6 +92,8 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
     @Published var message = "Pair once to keep your Mac and iPhone Shelf together."
     @Published var progress = ""
     @Published var lastSync: Date?
+    @Published private(set) var integrations: IntegrationSetup?
+    @Published private(set) var integrationStatus = "Accounts and provider keys connect automatically when you pair a Mac."
     @Published private(set) var playback: PairedCompanion?
     @Published private(set) var playbackStatus = "Pair in Device sync to connect YouTube and SoundCloud automatically."
     @Published var enabled: Bool { didSet { UserDefaults.standard.set(enabled, forKey: "sync-enabled"); if enabled { schedule(); Task { await sync() } } else { connectionSession?.invalidateAndCancel(); BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundID) } } }
@@ -105,6 +116,9 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
             playback = saved; playbackStatus = "Connected through Device sync."
         }
         if let data = try? Data(contentsOf: file), let saved = try? JSONDecoder().decode(ShelfSyncJournal.self, from: data) { journal = saved }
+        if let data = Keychain.read("device-integrations").data(using: .utf8), let saved = try? JSONDecoder().decode(IntegrationSetup.self, from: data), let id = pairing?.id, (try? saved.validate(for: id)) != nil {
+            integrations = saved; store.spotify.applyMacSetup(saved.spotify)
+        }
         journal.capture(store.state); persist()
     }
     func activate(_ foreground: Bool) {
@@ -125,25 +139,39 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
         do {
             _ = try await connection.health()
             try Keychain.write(String(data: JSONEncoder().encode(candidate), encoding: .utf8)!, account: "device-sync")
+            integrations = nil; store.spotify.applyMacSetup(nil); try? Keychain.write("", account: "device-integrations")
             pairing = candidate; pendingPair = nil; enabled = true; message = "Paired with your Mac."; discover()
             UserDefaults.standard.set(false, forKey: "companionManualOverride")
-            playback = nil; await refreshPlayback(connection)
+            playback = nil; await refreshPlayback(connection); await refreshIntegrations(connection)
         } catch { message = "Could not pair. " + error.localizedDescription; return }
         Task { await sync() }
     }
     func disconnect() {
+        setupRefresh?.cancel(); setupRefresh = nil; setupRefreshID = UUID()
         connectionSession?.invalidateAndCancel(); pending?.cancel(); timer?.cancel(); browser?.stop(); browser = nil
         if playback != nil && !UserDefaults.standard.bool(forKey: "companionManualOverride") { store.player.disconnectCompanion() }
         try? Keychain.write("", account: "device-sync"); try? Keychain.write("", account: "device-companion")
         playback = nil; playbackStatus = "Pair in Device sync to connect streaming automatically."
+        try? Keychain.write("", account: "device-integrations")
+        integrations = nil; store.spotify.applyMacSetup(nil)
+        integrationStatus = "Pair a Mac to connect accounts and provider keys automatically."
         pairing = nil; enabled = false; message = "Disconnected. Your saved music stays on this device."
     }
-    private var refreshingPlayback = false
+    private var setupRefresh: Task<Void, Never>?
+    private var setupRefreshID = UUID()
     func refreshPlaybackConnection() async {
-        guard let pairing, !refreshingPlayback else { return }; refreshingPlayback = true
-        defer { refreshingPlayback = false }
-        let connection = SyncConnection(pairing, waitsForConnectivity: false); defer { connection.session.invalidateAndCancel() }
-        await refreshPlayback(connection)
+        if let setupRefresh { await setupRefresh.value; return }
+        guard let pairing else { return }
+        let id = UUID(); setupRefreshID = id
+        let task = Task { [weak self] in
+            guard let self else { return }
+            let connection = SyncConnection(pairing, waitsForConnectivity: false)
+            defer { connection.session.invalidateAndCancel() }
+            await self.refreshPlayback(connection)
+            await self.refreshIntegrations(connection)
+        }
+        setupRefresh = task; await task.value
+        if setupRefreshID == id { setupRefresh = nil }
     }
     private func refreshPlayback(_ connection: SyncConnection) async {
         do {
@@ -165,12 +193,40 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
             }
         }
     }
+    func configureAccounts(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: "sync-accounts")
+        if !enabled {
+            integrations = nil; store.spotify.applyMacSetup(nil)
+            try? Keychain.write("", account: "device-integrations")
+            integrationStatus = "Automatic account setup is off."
+        } else { Task { await refreshPlaybackConnection() } }
+    }
+    private func refreshIntegrations(_ connection: SyncConnection) async {
+        guard UserDefaults.standard.object(forKey: "sync-accounts") as? Bool != false else { return }
+        do {
+            let value = try await connection.integrations()
+            guard UserDefaults.standard.object(forKey: "sync-accounts") as? Bool != false, pairing?.id == connection.pairing.id, pairing?.key == connection.pairing.key, pairing?.address == connection.pairing.address else { return }
+            if let value {
+                let data = try JSONEncoder().encode(value)
+                if Keychain.read("device-integrations") != String(decoding: data, as: UTF8.self) { try Keychain.write(String(decoding: data, as: UTF8.self), account: "device-integrations") }
+                integrations = value; store.spotify.applyMacSetup(value.spotify)
+                integrationStatus = "Account and provider setup synced from your Mac."
+            } else {
+                integrations = nil; store.spotify.applyMacSetup(nil); try? Keychain.write("", account: "device-integrations")
+                integrationStatus = "Update Cuda on your Mac for automatic account setup."
+            }
+        } catch {
+            guard pairing?.id == connection.pairing.id, pairing?.key == connection.pairing.key else { return }
+            integrationStatus = "Account setup paused. Reconnect to your Mac to refresh it."
+        }
+    }
     func sync() async {
         if !enabled { await refreshPlaybackConnection(); return }
         guard enabled, let pairing, !busy else { return }; busy = true; defer { busy = false; progress = ""; schedule() }
         let connection = SyncConnection(pairing); connectionSession = connection.session; defer { connection.session.invalidateAndCancel(); connectionSession = nil }
         do {
             await refreshPlayback(connection)
+            await refreshIntegrations(connection)
             journal.capture(store.state); persist()
             let result = try await connection.exchange(Array(journal.records.values)); journal.merge(result.records); apply()
             if offline && result.offline != false {

@@ -9,11 +9,16 @@ struct SettingsView: View {
     var body: some View {
         Form {
             DeviceSyncSettings(sync: store.deviceSync)
+            SyncedIntegrationSettings(sync: store.deviceSync, spotify: spotify)
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
             }
             Section {
                 TextField("Spotify Client ID", text: $clientID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                if let shared = spotify.macAccount {
+                    Text(shared.connected ? "Library connected as " + shared.account + " through your Mac." : "Spotify setup received from your Mac.").font(.subheadline).foregroundStyle(.secondary)
+                    if clientID.isEmpty && !shared.clientID.isEmpty { LabeledContent("Client ID", value: "From paired Mac") }
+                }
                 Button(spotify.connected ? "Reconnect Spotify" : "Connect Spotify", systemImage: "link") {
                     do { try spotify.connect() } catch { store.message = error.localizedDescription }
                 }
@@ -22,14 +27,14 @@ struct SettingsView: View {
                 if spotify.hasToken { Button("Disconnect Spotify", role: .destructive) { spotify.disconnect(); if store.player.current?.platform == "spotify" { store.player.playing = false; store.player.loading = false } } }
             } header: { Text("Spotify") } footer: {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Install Spotify and sign in on this device. Register an iOS app with bundle ID com.veikkaheiskanen.Cuda and redirect URI cuda-spotify://callback. Add its Client ID above. On-demand playback requires Premium.")
+                    Text("Install Spotify and sign in on this device. Register an iOS app with bundle ID com.veikkaheiskanen.Cuda and redirect URI cuda-spotify://callback. Device sync fills in the Client ID and library connection from your Mac. Connect once here to authorize playback on this iPhone. On-demand playback requires Premium.")
                     Link("Open Spotify Developer Dashboard", destination: URL(string: "https://developer.spotify.com/dashboard")!)
                 }
             }
             CompanionSettings(sync: store.deviceSync)
             Section("About") {
                 Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                LabeledContent("Cuda for iOS", value: "1.1.1")
+                LabeledContent("Cuda for iOS", value: "1.1.2")
                 Link("Source & setup", destination: URL(string: "https://github.com/veikkaheiskanen/Cuda/tree/main/ios")!)
                 Text("powered on:").foregroundStyle(.secondary)
                 Link("Riff by rootless", destination: URL(string: "https://github.com/rootscripts/riff")!)
@@ -102,6 +107,30 @@ struct SpotifyPlaylistPicker: View {
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Sync") { Task { if await store.syncSpotify(selected) { dismiss() } } }.disabled(store.syncing) } }
                 .task { selected = Set(store.state.selectedSpotify); await store.loadSpotifyPlaylists() }
                 .alert("Spotify", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) { Button("OK") { store.message = nil } } message: { Text(store.message ?? "") }
+        }
+    }
+}
+
+struct SyncedIntegrationSettings: View {
+    @ObservedObject var sync: DeviceSync
+    @ObservedObject var spotify: Spotify
+    @AppStorage("sync-accounts") private var enabled = true
+    var body: some View {
+        Section {
+            Toggle("Use accounts and keys from Mac", isOn: $enabled)
+                .onChange(of: enabled) { _, value in
+                    sync.configureAccounts(value)
+                }
+            if enabled, let setup = sync.integrations {
+                if setup.spotify.connected { Label("Spotify library · " + setup.spotify.account, systemImage: "checkmark.circle") }
+                ForEach([("musixmatch", "Musixmatch"), ("lyricfindSearch", "LyricFind"), ("genius", "Genius")], id: \.0) { key, name in
+                    if setup.lyrics[key]?.isEmpty == false { Label(name + " key synced", systemImage: "key") }
+                }
+                if !setup.lastfm.apiKey.isEmpty { Label("Last.fm setup synced", systemImage: "checkmark.circle") }
+            }
+            Text(sync.integrationStatus).font(.subheadline).foregroundStyle(.secondary)
+        } header: { Text("Connected services") } footer: {
+            Text("Provider keys and Spotify library authorization arrive through encrypted Device sync and stay in Keychain. Changes on your Mac update automatically. Spotify playback uses the Spotify app on this device and may need one authorization. A manually entered Client ID takes priority.")
         }
     }
 }

@@ -3,7 +3,10 @@ const AUDIO_FORMAT = 'bestaudio[protocol=https]/bestaudio[protocol=http]/bestaud
 function streamFromInfo(info) {
   if (!info || typeof info !== 'object') throw new Error('The source did not return an audio stream.');
   const item = info.entries ? info.entries.find(Boolean) : info;
-  const selected = item?.requested_downloads?.[0] || item?.requested_formats?.find(f => f.vcodec === 'none') || item;
+  // Some extractor versions include an incomplete requested download alongside
+  // the playable selected format. Never pick an object just because it exists.
+  const candidates = [...(item?.requested_downloads || []), ...(item?.requested_formats || []).filter(f => f?.vcodec === 'none'), item];
+  const selected = candidates.find(f => typeof f?.url === 'string' && /^https?:\/\//i.test(f.url) && f?.has_drm !== true);
   if (!selected?.url || !/^https?:\/\//i.test(selected.url)) throw new Error('The source did not return an audio stream.');
   const headers = {};
   for (const [key, value] of Object.entries({ ...item.http_headers, ...selected.http_headers })) {

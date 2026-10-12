@@ -4,7 +4,7 @@ const http = require('node:http'), https = require('node:https'), fs = require('
 const {MobileCompanion} = require('../macos/mobile-companion');
 const {ShelfSyncService} = require('../macos/shelf-sync');
 const {secureStore} = require('../macos/secure-store');
-async function fixture(t) {
+async function fixture(t, integrations = null) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cuda-auto-companion-'));
   const nativeToken = crypto.randomBytes(32).toString('hex'); let received;
   const upstream = http.createServer((req, res) => {
@@ -26,7 +26,7 @@ async function fixture(t) {
   });
   await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
   const companion = new MobileCompanion({upstream: 'http://127.0.0.1:' + upstream.address().port, serviceToken: nativeToken});
-  const sync = new ShelfSyncService({directory, store: secureStore(crypto.randomBytes(32)), api: async () => [], listenPort: 0, companion});
+  const sync = new ShelfSyncService({directory, store: secureStore(crypto.randomBytes(32)), api: async () => [], listenPort: 0, companion, integrations});
   t.after(async () => { await sync.close(); upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); fs.rmSync(directory, {recursive: true, force: true}); });
   function tls(route, token = sync.config.token) {
     return new Promise((resolve, reject) => {
@@ -76,4 +76,14 @@ test('reset and disable revoke automatic streaming while reopen provisions fresh
   await f.sync.configure({enabled: false}); assert.equal(f.companion.status().port, 0); assert.equal(f.companion.status().token, '');
   await assert.rejects(fetch('http://127.0.0.1:' + fresh.port + '/health?pair=' + fresh.token));
   await f.sync.configure({enabled: true}); const reopened = (await f.tls('/sync/companion')).value; assert.notEqual(reopened.token, fresh.token);
+});
+
+test('account bootstrap is available only over authenticated sync TLS, never the stream bridge',async t=>{
+ const f=await fixture(t,async()=>({spotify:{clientID:'a'.repeat(32),accessToken:'short-lived-fixture'},lyrics:{musixmatch:'fixture-key'}}));
+ await f.sync.configure({enabled:true});
+ assert.equal((await f.tls('/sync/integrations','wrong')).code,401);
+ const stream=f.companion.status();assert.equal((await f.tls('/sync/integrations',stream.token)).code,401);
+ const result=await f.tls('/sync/integrations');assert.equal(result.code,200);assert.equal(result.value.macID,f.sync.config.id);assert.equal(result.value.lyrics.musixmatch,'fixture-key');
+ assert.equal((await fetch('http://127.0.0.1:'+stream.port+'/sync/integrations',{headers:{Authorization:'Bearer '+stream.token}})).status,404);
+ const old=f.sync.config.token;await f.sync.configure({reset:true});assert.equal((await f.tls('/sync/integrations',old)).code,401);
 });

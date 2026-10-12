@@ -25,7 +25,11 @@ async function invoke(method,args) {
   process.env.CUDA_NATIVE_SERVICE_TOKEN=serviceToken;
   const server=require('../server');server.setSpotifyProvider(spotify);port=await server.startServer(0);
   const companion=new (require('./mobile-companion').MobileCompanion)({upstream:'http://127.0.0.1:'+port,serviceToken});
-  shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send,companion,listenPort:process.env.CUDA_NATIVE_TEST_SYNC_PORT==='0'?0:38474});
+  shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send,companion,integrations:async()=>({
+   spotify:await spotify.mobileSession(),
+   lyrics:Object.fromEntries(['musixmatch','lyricfindSearch','lyricfindDisplay','genius','territory'].map(key=>[key,String(lyrics.keys[key]||'')])),
+   lastfm:{username:String(spotify.status().lastfm?.username||''),apiKey:String(spotify.status().lastfm?.apiKey||'')}
+  }),listenPort:process.env.CUDA_NATIVE_TEST_SYNC_PORT==='0'?0:38474});
   await shelfSync.configure().catch(()=>{});
   const migration=await require('./legacy-shelf').migrateShelf(directory);
   let shelf;try{shelf=privateMedia(JSON.parse(fs.readFileSync(path.join(directory,'native-shelf.json'),'utf8')));}catch{}

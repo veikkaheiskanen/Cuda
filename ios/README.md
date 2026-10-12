@@ -81,3 +81,12 @@ The **iOS** GitHub workflow also runs model/URL validation tests and a Simulator
 Live Spotify authorization and local-network streaming require physical devices and your own account/pairing setup. Simulator checks do not establish real-device battery, background behavior or Spotify account access.
 
 Built by [veikkaheiskanen](https://github.com/veikkaheiskanen). Powered on [Riff by rootless](https://github.com/rootscripts/riff) and [Deck by jarilehtinen](https://github.com/jarilehtinen/deck).
+
+
+### Automatic account and provider setup
+
+Cuda Native **1.0.7+** and Cuda for iOS **1.1.2+** share configured Spotify Client ID/library authorization, Musixmatch, LyricFind, Genius keys and Last.fm setup when Device sync pairs the devices. Existing pairings pick up setup automatically. The snapshot travels only through authenticated, certificate-pinned HTTPS and is kept in iOS Keychain, separately from Shelf records and backups. Mac refresh/native playback credentials never transfer. Short-lived Spotify library authorization refreshes through the paired Mac while it is reachable. Provider fields describe setup; sharing keys does not add an unsupported iOS provider feature.
+
+In iOS Settings → Connected services, turn off **Use accounts and keys from Mac** to remove the imported Keychain snapshot. Disconnecting or switching Macs clears the shared setup. Manual Spotify Client IDs take priority, and an independently authorized iPhone Spotify session is preserved. Spotify playback still needs Spotify installed and signed in on the phone; a shared token with `app-remote-control` permission is tried first, with official device authorization as fallback. Existing Mac authorizations without that permission can share the library immediately but may need the one-tap iPhone playback authorization.
+
+Public music availability is provider-dependent. The Ares track reported in testing was refused by YouTube's bot/sign-in check from this network; SoundCloud returned only a 30-second preview. A source refusal is now reported instead of parsing yt-dlp's `null` output as an audio stream. Alternate recordings are still checked for artist/title/duration; they must not silently replace a full track with a preview or a different recording. Browser/account authorization for YouTube is not manufactured by copying Spotify credentials.

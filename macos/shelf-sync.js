@@ -23,8 +23,8 @@ function validateRecords(input){
 function merge(records,incoming){for(const r of incoming){const old=records[r.key];if(!old||old.clock<r.clock||old.clock===r.clock&&old.device<r.device)records[r.key]=r;}}
 async function fileHash(file){const hash=crypto.createHash('sha256');for await(const chunk of fs.createReadStream(file))hash.update(chunk);return hash.digest('hex');}
 class ShelfSyncService {
- constructor({directory,store,api,emit=()=>{},listenPort=38474,companion=null}){
-  this.companion=companion;
+ constructor({directory,store,api,emit=()=>{},listenPort=38474,companion=null,integrations=null}){
+  this.companion=companion;this.integrations=integrations;
   this.directory=directory;this.store=store;this.api=api;this.emit=emit;this.listenPort=listenPort;this.records={};this.assets=new Map();this.cache=new Map();this.queue=Promise.resolve();this.config={enabled:false,offline:true,id:crypto.randomUUID(),token:crypto.randomBytes(32).toString('hex')};
   try{this.config={...this.config,...JSON.parse(store.decryptString(fs.readFileSync(path.join(directory,'native-sync-config.enc'))))};}catch{}
   try{this.records=JSON.parse(fs.readFileSync(path.join(directory,'native-sync-records.json'),'utf8'));}catch{}
@@ -79,6 +79,10 @@ class ShelfSyncService {
    if(u.pathname==='/sync/companion'&&req.method==='GET'){
     if(!this.companion)return fail(404,'Update Cuda on your Mac to connect streaming automatically.');
     res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(this.companion.status()));
+   }
+   if(u.pathname==='/sync/integrations'&&req.method==='GET'){
+    if(!this.integrations)return fail(404,'Update Cuda on your Mac for automatic account setup.');
+    res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({version:1,macID:this.config.id,...await this.integrations()}));
    }
    if(u.pathname==='/sync/exchange'&&req.method==='POST'){
     const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>8000000)return fail(413,'Shelf is too large.');chunks.push(chunk);}

@@ -21,7 +21,7 @@ const {ShelfSyncService,fileHash}=require('../../macos/shelf-sync'),{secureStore
  });
  await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
  const companion=new (require('../../macos/mobile-companion').MobileCompanion)({upstream:'http://127.0.0.1:'+upstream.address().port,serviceToken:nativeToken});
- const service=new ShelfSyncService({directory,api,store:secureStore(crypto.randomBytes(32)),listenPort:38474,companion});const status=await service.configure({enabled:true});
+ const service=new ShelfSyncService({directory,api,store:secureStore(crypto.randomBytes(32)),listenPort:38474,companion,integrations:async()=>({spotify:{clientID:'a'.repeat(32),connected:true,accessToken:'isolated-fixture-only',expiresAt:Date.now()+3600000,scope:'playlist-read-private',account:'Test listener'},lyrics:{musixmatch:'isolated-key',territory:'US'},lastfm:{username:'test-listener',apiKey:'isolated-lastfm-key'}})});const status=await service.configure({enabled:true});
  await service.exchange([{key:'p:sync-fixture',clock:1,device:'mac-fixture',deleted:false,playlist:{id:'sync-fixture',name:'Mac sync fixture',description:'Original test music',tracks:[track]}}]);
  const link=new URL('cuda-sync://pair');for(const [key,value] of Object.entries({address:'https://127.0.0.1:'+status.port,key:status.token,cert:status.fingerprint,id:status.id}))link.searchParams.set(key,value);
  fs.writeFileSync('ios/CudaTests/SyncFixture.json',JSON.stringify({link:link.href}));console.log('Isolated TLS sync fixture ready.');

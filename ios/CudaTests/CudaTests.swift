@@ -1,4 +1,6 @@
 import XCTest
+import SwiftUI
+import UIKit
 @testable import Cuda
 
 final class CudaTests: XCTestCase {
@@ -64,8 +66,8 @@ final class CudaTests: XCTestCase {
         let store = Store.shared, sync = store.deviceSync
         guard sync.pairing == nil else { throw XCTSkip("This test only uses an unpaired, isolated app profile.") }
         let original = store.state
-        let accounts = ["device-sync", "device-companion"], keys = accounts.map { Keychain.read($0) }
-        let names = ["sync-enabled", "sync-offline", "companionManualOverride"], settings = names.map { UserDefaults.standard.object(forKey: $0) }
+        let accounts = ["device-sync", "device-companion", "device-integrations"], keys = accounts.map { Keychain.read($0) }
+        let names = ["sync-enabled", "sync-offline", "companionManualOverride", "sync-accounts"], settings = names.map { UserDefaults.standard.object(forKey: $0) }
         let files = ["shelf.json", "sync-journal.json"].map { store.root.appendingPathComponent($0) }
         let contents = files.map { try? Data(contentsOf: $0) }
         defer {
@@ -79,6 +81,14 @@ final class CudaTests: XCTestCase {
             await sync.pair(paired)
             XCTAssertEqual(sync.pairing?.id, paired.id, sync.message)
             XCTAssertEqual(sync.playback?.macID, paired.id, sync.playbackStatus)
+            XCTAssertEqual(sync.integrations?.macID, paired.id, sync.integrationStatus)
+            XCTAssertEqual(store.spotify.clientID, String(repeating: "a", count: 32))
+            XCTAssertTrue(store.spotify.hasToken)
+            XCTAssertEqual(sync.integrations?.lyrics["musixmatch"], "isolated-key")
+            XCTAssertFalse(Keychain.read("device-integrations").isEmpty)
+            sync.configureAccounts(false); XCTAssertNil(store.spotify.macAccount); XCTAssertEqual(Keychain.read("device-integrations"), "")
+            sync.configureAccounts(true); await sync.refreshPlaybackConnection()
+            XCTAssertTrue(store.spotify.hasToken)
             XCTAssertNotEqual(store.companion.token, paired.key)
             XCTAssertEqual(store.companion.address, sync.playback?.address)
             let results = try await store.companion.search("original fixture")
@@ -95,7 +105,34 @@ final class CudaTests: XCTestCase {
         }
         sync.disconnect()
         for _ in 0..<100 { if !sync.busy { break }; try? await Task.sleep(for: .milliseconds(20)) }
-        XCTAssertFalse(store.player.playing); XCTAssertNil(sync.playback)
+        XCTAssertFalse(store.player.playing); XCTAssertNil(sync.playback); XCTAssertNil(sync.integrations); XCTAssertNil(store.spotify.macAccount); XCTAssertEqual(Keychain.read("device-integrations"), "")
+    }
+    @MainActor
+    func testWideArtworkCannotPaintOutsideSquareFrames() throws {
+        let wide = UIGraphicsImageRenderer(size: CGSize(width: 192, height: 108)).image { context in
+            UIColor.red.setFill(); context.fill(CGRect(x: 0, y: 0, width: 192, height: 108))
+        }
+        for side in [52.0, 152.0, 360.0] {
+            let content = HStack(spacing: 0) {
+                Cover(image: wide).frame(width: side, height: side)
+                Color.white.frame(width: 60, height: side)
+            }.frame(width: side + 60, height: side).background(.white)
+            let renderer = ImageRenderer(content: content); renderer.scale = 1
+            let image = try XCTUnwrap(renderer.cgImage)
+            let width = image.width, height = image.height
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            let context = try XCTUnwrap(CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            let inside = (height / 2 * width + Int(side / 2)) * 4
+            XCTAssertGreaterThan(bytes[inside], 240); XCTAssertLessThan(bytes[inside + 1], 20)
+            let outside = (height / 2 * width + Int(side + 10)) * 4
+            XCTAssertGreaterThan(bytes[outside], 240); XCTAssertGreaterThan(bytes[outside + 1], 240); XCTAssertGreaterThan(bytes[outside + 2], 240, "Wide cover overflow at size \(side)")
+        }
+    }
+    func testSyncedAccountSetupRejectsAnotherMacAndUnsupportedKeys() throws {
+        var value = IntegrationSetup(version: 1, macID: "test-mac", spotify: .init(clientID: String(repeating: "a", count: 32), connected: true, accessToken: "fixture", expiresAt: Date().timeIntervalSince1970 * 1000 + 3600000, scope: "", account: "Test"), lyrics: ["musixmatch": "fixture"], lastfm: .init(username: "", apiKey: ""))
+        XCTAssertNoThrow(try value.validate(for: "test-mac")); XCTAssertThrowsError(try value.validate(for: "other-mac"))
+        value.lyrics["refresh_token"] = "not-allowed"; XCTAssertThrowsError(try value.validate(for: "test-mac"))
     }
     func testCanonicalIdentityPreservesDifferentSources() {
         XCTAssertEqual(Track.unique([track(), track(), track("spotify")]).count, 2)

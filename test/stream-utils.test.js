@@ -10,3 +10,9 @@ test('chosen audio format retains both provider and format headers',()=>{
 });
 test('stream extraction rejects absent and non-HTTP media',()=>{for(const value of [null,{},{url:'file:///private/a'},{entries:[]}])assert.throws(()=>streamFromInfo(value),/audio stream/);});
 test('signed stream URLs expire before their provider deadline',()=>{const now=1000000;assert.equal(streamExpiry('https://cdn.example/audio?expire=1100',now),1040000);assert.equal(streamExpiry('https://cdn.example/audio?expires=999',now),939000);assert.equal(streamExpiry('https://cdn.example/audio',now),now+600000);});
+
+test('incomplete requested downloads fall back to the selected playable audio',()=>{
+ const value=streamFromInfo({requested_downloads:[{filepath:'unused',format_id:'140'}],requested_formats:[{url:'https://cdn.example/audio',vcodec:'none',protocol:'https'}]});
+ assert.equal(value.url,'https://cdn.example/audio');
+ assert.equal(streamFromInfo({url:'https://cdn.example/direct',requested_downloads:[{format_id:'140'}]}).url,'https://cdn.example/direct');
+});

@@ -86,11 +86,15 @@ final class Store: ObservableObject {
         results = local
         do { try await Task.sleep(for: .milliseconds(220)); try Task.checkCancellation() } catch { if searchGeneration == key { searching = false }; return }
         async let publicTracks = searchCompanion(query)
-        async let spotifyTracks = spotify.searchAvailable(query)
+        async let spotifyTracks = searchSpotify(query)
         let remote = await publicTracks + spotifyTracks
         guard key == searchGeneration, !Task.isCancelled else { return }
         results = Track.unique(local + remote); searching = false
         if results.isEmpty { message = "No songs found. Try another search, connect Spotify, or pair your Mac in Settings." }
+    }
+    private func searchSpotify(_ query: String) async -> [Track] {
+        if !spotify.hasToken { await deviceSync.refreshPlaybackConnection() }
+        return await spotify.searchAvailable(query)
     }
     private func searchCompanion(_ query: String) async -> [Track] {
         if !UserDefaults.standard.bool(forKey: "companionManualOverride") { await deviceSync.refreshPlaybackConnection() }
@@ -104,7 +108,7 @@ final class Store: ObservableObject {
         guard let seed else { recommendations = []; return }
         let query = seed.artist == "Unknown artist" ? seed.title : seed.artist
         async let remote: [Track] = { [companion] in (try? await companion.search(query)) ?? [] }()
-        async let spotifyTracks = spotify.searchAvailable(query)
+        async let spotifyTracks = searchSpotify(query)
         let tracks = await remote + spotifyTracks
         let recent = Set(state.history.prefix(8).map(\.key))
         recommendations = Array(Track.unique(tracks + taste).filter { !recent.contains($0.key) }.prefix(20))

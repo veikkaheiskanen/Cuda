@@ -15,11 +15,21 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     private var pendingURI: String?
     private var acceptsState = false
     private var authorizing = false
+    private var attemptingSharedPlayback = false
     private var artworkKey = ""
     private var accessToken = ""
     private var lastState: SPTAppRemotePlayerState?
-    var clientID: String { UserDefaults.standard.string(forKey: "spotifyClientID") ?? "" }
-    var hasToken: Bool { !accessToken.isEmpty }
+    @Published private(set) var macAccount: IntegrationSetup.SpotifyAccount?
+    var clientID: String {
+        let own = UserDefaults.standard.string(forKey: "spotifyClientID") ?? ""
+        return own.isEmpty ? macAccount?.clientID ?? "" : own
+    }
+    var hasToken: Bool { !accessToken.isEmpty || macAccount?.usable == true }
+    func applyMacSetup(_ value: IntegrationSetup.SpotifyAccount?) {
+        macAccount = UserDefaults.standard.object(forKey: "sync-accounts") as? Bool == false ? nil : value
+    }
+    private var apiToken: String { !accessToken.isEmpty ? accessToken : macAccount?.usable == true ? macAccount!.accessToken : "" }
+
 
     private func configure() throws -> SPTAppRemote {
         guard clientID.range(of: "^[a-fA-F0-9]{32}$", options: .regularExpression) != nil else {
@@ -33,12 +43,19 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         }
         return remote!
     }
-    func connect(uri: String = "") throws {
+    func connect(uri: String = "", useShared: Bool = true) throws {
         let remote = try configure()
         guard UIApplication.shared.canOpenURL(URL(string: "spotify://")!) else {
             throw CudaError.message("Install Spotify on this device and sign in, then connect again.")
         }
         acceptsState = true; authorizing = true; pendingURI = uri.isEmpty ? nil : uri
+        if useShared, let shared = macAccount, shared.usable, shared.clientID == clientID,
+           shared.scope.split(separator: " ").contains("app-remote-control") {
+            attemptingSharedPlayback = true; authorizing = false
+            remote.connectionParameters.accessToken = shared.accessToken
+            message = "Connecting Spotify with your Mac authorization…"; remote.connect(); return
+        }
+        attemptingSharedPlayback = false
         message = "Finish connecting in Spotify…"
         remote.authorizeAndPlayURI(uri, asRadio: false, additionalScopes: ["playlist-read-private", "playlist-read-collaborative", "user-library-read", "user-library-modify"]) { [weak self] success in
             Task { @MainActor in
@@ -55,7 +72,9 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
             remote.connect(); onAuthorized?()
         } else { message = parameters?[SPTAppRemoteErrorDescriptionKey] ?? "Spotify sign-in was cancelled."; onFailure?(message) }
     }
-    func foreground() { if !accessToken.isEmpty, acceptsState, remote?.isConnected == false { remote?.connect() } }
+    func foreground() {
+        if !accessToken.isEmpty, acceptsState, remote?.isConnected == false { remote?.connect() }
+    }
     func background() { remote?.disconnect() }
     func deactivate() { acceptsState = false; pendingURI = nil; remote?.playerAPI?.pause(nil); remote?.disconnect() }
     func disconnect() { deactivate(); accessToken = ""; remote = nil; connected = false; artwork = nil; message = "Disconnected." }
@@ -78,6 +97,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     }
     private func established(_ appRemote: SPTAppRemote) {
         guard appRemote === remote else { return }
+        attemptingSharedPlayback = false
         connected = true; message = "Connected to Spotify on this device."
         appRemote.playerAPI?.delegate = self
         appRemote.playerAPI?.subscribe(toPlayerState: report)
@@ -86,6 +106,10 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
         Task { @MainActor in
             guard appRemote === self.remote else { return }
+            if self.attemptingSharedPlayback {
+                self.attemptingSharedPlayback = false
+                do { try self.connect(uri: self.pendingURI ?? "", useShared: false); return } catch { }
+            }
             self.connected = false; self.message = "Spotify connection stopped. Tap Connect Spotify to resume."
             self.onFailure?(self.message)
         }
@@ -111,14 +135,18 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         }
     }
     func api(_ path: String, method: String = "GET") async throws -> Data {
-        guard !accessToken.isEmpty else { throw CudaError.message("Connect Spotify in Settings first.") }
+        let requestToken = apiToken
+        guard !requestToken.isEmpty else { throw CudaError.message("Reconnect to your paired Mac or connect Spotify in Settings.") }
         // Only Spotify's own API ever receives this token, including pagination.
         guard let url = URL(string: "https://api.spotify.com/v1/" + path), url.host == "api.spotify.com" else { throw CudaError.message("Invalid Spotify request.") }
         var request = URLRequest(url: url); request.httpMethod = method; request.timeoutInterval = 20
-        request.setValue("Bearer " + accessToken, forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer " + requestToken, forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode) else {
-            if (response as? HTTPURLResponse)?.statusCode == 401 { accessToken = ""; throw CudaError.message("Spotify sign-in expired. Connect Spotify again in Settings.") }
+            if (response as? HTTPURLResponse)?.statusCode == 401 {
+                if requestToken == accessToken { accessToken = "" } else { macAccount = nil }
+                throw CudaError.message("Spotify authorization expired. Sync with your Mac or reconnect Spotify in Settings.")
+            }
             throw CudaError.message("Spotify could not complete this request. Check your developer app access and try again.")
         }
         return data

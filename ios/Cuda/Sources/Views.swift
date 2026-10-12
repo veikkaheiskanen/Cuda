@@ -71,15 +71,24 @@ struct Cover: View {
     var track: Track?
     var image: UIImage? = nil
     var body: some View {
-        ZStack {
-            Rectangle().fill(Color(uiColor: .tertiarySystemFill))
-            if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else if let raw = track?.thumbnail, raw.hasPrefix("demo-") {
-                Image(raw).resizable().scaledToFill()
-            } else if let raw = track?.thumbnail, let url = URL(string: raw), url.scheme == "https" {
-                AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary) }
-            } else { Image(systemName: "music.note").font(.largeTitle).foregroundStyle(.secondary) }
-        }.aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
+        Rectangle().fill(Color(uiColor: .tertiarySystemFill))
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                GeometryReader { geometry in
+                    ZStack {
+                        if let image { Image(uiImage: image).resizable().scaledToFill() }
+                        else if let raw = track?.thumbnail, raw.hasPrefix("demo-") {
+                            Image(raw).resizable().scaledToFill()
+                        } else if let raw = track?.thumbnail, let url = URL(string: raw), url.scheme == "https" {
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image { image.resizable().scaledToFill() }
+                                else { Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary) }
+                            }
+                        } else { Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary) }
+                    }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous)).accessibilityHidden(true)
     }
 }
 struct TrackRow: View {

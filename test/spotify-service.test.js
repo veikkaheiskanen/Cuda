@@ -54,3 +54,14 @@ test('native playlist detail fetches only accessible selected playlist items',as
  const f=fixture(t,url=>url.includes('me/playlists')?{items:[{id:ID,name:'Mine',owner:{id:'user'}},{id:ID2,name:'Other',owner:{id:'other'}}]}:url.includes('playlists/'+ID+'/items')?{items:[{item:item()}],next:null}:defaults(url));
  await f.service.connect(CLIENT);const tracks=await f.service.playlistTracks(ID);assert.equal(tracks.length,1);assert.equal(tracks[0].id,ID);await assert.rejects(f.service.playlistTracks(ID2),/own or collaborate/);
 });
+
+test('device setup shares refreshed short-lived API authorization without refresh or native credentials',async t=>{
+ let clock=1000000,requests=0;
+ const f=fixture(t,url=>url.includes('/api/token')?{access_token:'access-'+(++requests),refresh_token:'never-share-refresh',expires_in:3600,...(requests===1?{scope:'app-remote-control playlist-read-private'}:{})}:defaults(url),{now:()=>clock});
+ assert.equal((await f.service.mobileSession()).connected,false);
+ await f.service.connect(CLIENT);clock+=3600000;
+ const session=await f.service.mobileSession();assert.equal(session.accessToken,'access-2');assert.equal(session.clientID,CLIENT);assert.equal(session.scope,'app-remote-control playlist-read-private');assert.equal(session.expiresAt,clock+3600000);
+ assert.equal(JSON.stringify(session).includes('never-share-refresh'),false);assert.equal(JSON.stringify(f.service.status()).includes('access-2'),false);
+ await assert.rejects(f.service.invoke('mobileSession'),/Unknown/);
+ await f.service.disconnect();assert.equal((await f.service.mobileSession()).connected,false);
+});

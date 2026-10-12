@@ -92,7 +92,7 @@ struct MacSyncSettings: View {
                 HStack { Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await sync.sync() } }.disabled(sync.busy); if sync.busy { ProgressView().controlSize(.small) }; Button("Reset pairing", role: .destructive) { resetting = true } }
             }
             Text(sync.message).font(.callout).foregroundStyle(.secondary)
-            Text("Favourites, playlists and new offline songs sync automatically over encrypted Wi-Fi. Pairing also connects YouTube, YouTube Music and SoundCloud playback on your iPhone—no separate companion setup. Keep Cuda open on an awake Mac on the same trusted local network. Playback streams use a separate local connection.").font(.callout).foregroundStyle(.secondary)
+            Text("Favourites, playlists and new offline songs sync automatically over encrypted Wi-Fi. Pairing also shares Spotify library authorization, its Client ID, lyrics provider keys and Last.fm setup over encrypted TLS. Spotify playback may need permission in the iPhone Spotify app. It connects YouTube, YouTube Music and SoundCloud playback on your iPhone—no separate companion setup. Keep Cuda open on an awake Mac on the same trusted local network. Playback streams use a separate local connection.").font(.callout).foregroundStyle(.secondary)
         }.confirmationDialog("Disconnect previously paired devices?", isPresented: $resetting) { Button("Reset pairing", role: .destructive) { Task { await sync.configure(reset: true) } } }
     }
     private func qr(_ value: String) -> NSImage? {

@@ -9,7 +9,7 @@ const {normalizeAudioSettings}=require('./audio-settings');
 const API = 'https://api.spotify.com/v1/';
 const REDIRECT = 'http://127.0.0.1:8898/callback';
 const PLAYBACK_REDIRECT = 'http://127.0.0.1:8898/login';
-const SCOPES = 'user-read-private playlist-read-private playlist-read-collaborative user-library-read user-library-modify';
+const SCOPES = 'app-remote-control user-read-private playlist-read-private playlist-read-collaborative user-library-read user-library-modify';
 const idOK = value => typeof value === 'string' && /^[a-zA-Z0-9]{22}$/.test(value);
 function track(item) {
   if (!item || item.type && item.type !== 'track' || !idOK(item.id)) return null;
@@ -54,7 +54,7 @@ function createSpotify({directory,safeStorage,openExternal,emit=()=>{},fetchImpl
   async function accessToken(){
     if(!token){try{if(!safeStorage.isEncryptionAvailable())throw new Error();token=JSON.parse(safeStorage.decryptString(fs.readFileSync(tokenFile)));}catch{throw new Error('Connect Spotify in Settings first.');}}
     if(token.expiresAt>now()+60000)return token.access_token;
-    if(!refreshing)refreshing=tokenRequest({grant_type:'refresh_token',refresh_token:token.refresh_token,client_id:state.clientId}).then(value=>{storeToken({...value,refresh_token:value.refresh_token||token.refresh_token});return token.access_token;}).finally(()=>refreshing=null);
+    if(!refreshing)refreshing=tokenRequest({grant_type:'refresh_token',refresh_token:token.refresh_token,client_id:state.clientId}).then(value=>{storeToken({...token,...value,refresh_token:value.refresh_token||token.refresh_token});return token.access_token;}).finally(()=>refreshing=null);
     return refreshing;
   }
   async function api(endpoint,{method='GET',body,retry=true}={}){
@@ -151,7 +151,16 @@ function createSpotify({directory,safeStorage,openExternal,emit=()=>{},fetchImpl
   }
   async function dismiss(id){if(!idOK(id))throw new Error('Invalid album.');if(!state.dismissed.includes(id))state.dismissed.push(id);if(state.weekly)state.weekly.items=state.weekly.items.filter(a=>a.id!==id);save();return status();}
   async function radio(genre){const seeds=await search('genre:'+String(genre).replace(/[^\p{L}\p{N} -]/gu,'').slice(0,60));if(!seeds.length)throw new Error('No Spotify tracks found for this genre.');const response=await playback('radio',{uri:seeds[0].uri});return (response.tracks||[]).map(t=>{const id=(t.uri||'').split(':').at(-1);return idOK(id)?{id,uri:t.uri,url:t.uri,platform:'spotify',title:t.metadata?.title||'Untitled',artist:t.metadata?.artist_name||'',albumId:t.album_uri?.split(':').at(-1),album:t.metadata?.album_title||'',duration:0,thumbnail:''}:null;}).filter(Boolean);}
+  // Only called by the authenticated, pinned-TLS device setup endpoint.
+  // Refresh/native playback credentials never leave the Mac.
+  async function mobileSession(){
+    const value={clientID:state.clientId,connected:false,accessToken:'',expiresAt:0,scope:'',account:''};
+    if(!status().connected)return value;
+    try{value.accessToken=await accessToken();value.connected=true;value.expiresAt=token.expiresAt;value.scope=token.scope||'';value.account=String(state.profile?.display_name||state.profile?.id||'Spotify');}
+    catch{value.message='Reconnect Spotify on your Mac to share this account.';}
+    return value;
+  }
   const operations={status,connect,connectPlayback,disconnect,playlists,playlistTracks,sync,search,albumTracks,shelf,like,weekly,dismiss,radio,playback,played,lastfm};
-  return {...operations,async invoke(operation,args=[]){if(!Object.hasOwn(operations,operation)||!Array.isArray(args))throw new Error('Unknown Spotify operation.');return operations[operation](...args);},close(){login?.();native.close();}};
+  return {...operations,mobileSession,async invoke(operation,args=[]){if(!Object.hasOwn(operations,operation)||!Array.isArray(args))throw new Error('Unknown Spotify operation.');return operations[operation](...args);},close(){login?.();native.close();}};
 }
 module.exports={createSpotify,NativePlayer,track,REDIRECT,PLAYBACK_REDIRECT,SCOPES};
