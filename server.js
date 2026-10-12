@@ -1,6 +1,11 @@
 const {choosePlaybackSource}=require('./playback-resolver');
 const { selectSources, sameRecording } = require('./source-selection');
 const { AUDIO_FORMAT, streamFromInfo, streamExpiry } = require('./stream-utils');
+const {SERVICES, DEFAULTS, enabledServices} = require('./streaming-services');
+const audius = require('./audius-service').createAudius();
+let hostServices = DEFAULTS;
+function setStreamingServices(values) { hostServices = enabledServices(values, SERVICES); }
+function requestServices(req, values) { return enabledServices(values ?? url.parse(req.url, true).query.services ?? hostServices, hostServices); }
 let spotifyProvider = null;
 function setSpotifyProvider(provider) { spotifyProvider = provider; }
 const http = require('http');
@@ -15,7 +20,7 @@ const { StringDecoder } = require("string_decoder");
 
 const PORT = 38472;
 let serverPort = PORT;
-const { CACHE_DIR, CUSTOM_LYRICS_DIR, LYRICS_DIR, THUMBNAILS_DIR, METADATA_PATH, LIBRARY_DIR, LIBRARY_PATH, ytDlpCommand } = require('./platform');
+const { DATA_DIR, CACHE_DIR, CUSTOM_LYRICS_DIR, LYRICS_DIR, THUMBNAILS_DIR, METADATA_PATH, LIBRARY_DIR, LIBRARY_PATH, ytDlpCommand } = require('./platform');
 
 if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
 if (!fs.existsSync(CUSTOM_LYRICS_DIR)) fs.mkdirSync(CUSTOM_LYRICS_DIR, { recursive: true });
@@ -318,170 +323,7 @@ async function searchSoundcloud(query, limit = 14) {
   }
 }
 
-function buildDiscoveryQueries(profile) {
-  const artists = (profile.topArtists || []).map(a => typeof a === 'string' ? a : a.name).filter(Boolean);
-  const shuffled = [...artists].sort(() => Math.random() - 0.5);
-  const queries = [];
-
-  if (shuffled.length > 0) {
-    queries.push(shuffled[0]);
-    if (shuffled.length > 1) {
-      queries.push(shuffled[1]);
-    }
-  }
-
-  if (profile.dominantScript === 'Cyrillic' && shuffled.length > 0) {
-    queries.push(`${shuffled[0]} похожие песни`);
-  }
-
-  if (queries.length === 0) {
-    queries.push('synthwave chill', 'indie electronic');
-  }
-
-  return queries;
-}
-
-function scoreDiscoveryCandidate(track, profile, heardKeys, heardIds) {
-  const normalized = normalizeTrack(track);
-  if (!normalized) return null;
-  const key = getTrackNormalizedKey(normalized.artist, normalized.title);
-  if (!normalized.url || !normalized.id) return null;
-
-  if (heardIds.has(normalized.id) || (key && heardKeys.has(key))) return null;
-  if (recentlyRecommendedTrackIds.has(normalized.id) || (key && recentlyRecommendedKeys.has(key))) return null;
-  if (isSpamOrUnofficial(normalized.title, normalized.duration, normalized.artist)) return null;
-
-  let score = 1.0;
-
-  if (/-\s*topic$/i.test(normalized.artist || '')) {
-    score += 1.5;
-  }
-
-  if (/^.+?\s+-\s+.+$/.test(normalized.title || '')) {
-    score += 1.0;
-  }
-
-  const candArtist = normalizeArtistName(normalized.artist);
-  const artistNames = (profile.topArtists || []).map(a => typeof a === 'string' ? a : a.name);
-  if (artistNames.some(a => candArtist.includes(a) || a.includes(candArtist))) {
-    score += 3.0;
-  }
-
-  const isCyrillic = /[\u0400-\u04FF]/.test(normalized.title);
-  if (profile.dominantScript === 'Cyrillic' && isCyrillic) {
-    score += 2.0;
-  } else if (profile.dominantScript !== 'Cyrillic' && !isCyrillic) {
-    score += 1.0;
-  }
-
-  if (normalized.duration > 0 && profile.typicalDuration > 0) {
-    const delta = Math.abs(normalized.duration - profile.typicalDuration);
-    score += Math.max(0, 2.0 - (delta / 60));
-  }
-
-  score += Math.random() * 1.5;
-
-  return {
-    ...normalized,
-    score
-  };
-}
-
-async function recommendVibeTracks(historyTracks, favoriteTracks, platform = 'soundcloud', limit = 10, clientProfile = null) {
-  const normalizedHistory = historyTracks.map(normalizeTrack).filter(Boolean);
-  const normalizedFavorites = favoriteTracks.map(normalizeTrack).filter(Boolean);
-
-  const heardIds = new Set();
-  const heardKeys = new Set();
-  [...normalizedHistory, ...normalizedFavorites].forEach(track => {
-    heardIds.add(track.id);
-    const key = getTrackNormalizedKey(track.artist, track.title);
-    if (key) heardKeys.add(key);
-  });
-
-  const artistCounts = {};
-  let cyrillicCount = 0;
-  const durations = [];
-
-  [...normalizedFavorites, ...normalizedHistory].forEach(t => {
-    if (t.artist && t.artist.trim()) {
-      const a = normalizeArtistName(t.artist);
-      artistCounts[a] = (artistCounts[a] || 0) + 1;
-    }
-    if (t.title && /[\u0400-\u04FF]/.test(t.title)) cyrillicCount++;
-    if (t.duration > 0) durations.push(t.duration);
-  });
-
-  const sortedArtists = Object.entries(artistCounts)
-    .sort((a, b) => b[1] - a[1])
-    .map(e => e[0]);
-
-  const profile = {
-    topArtists: clientProfile?.topArtists || sortedArtists.slice(0, 5),
-    dominantScript: clientProfile?.dominantScript || (cyrillicCount > (normalizedFavorites.length + normalizedHistory.length) * 0.35 ? 'Cyrillic' : 'Latin'),
-    typicalDuration: clientProfile?.avgDuration || (durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 210),
-    trackCount: normalizedFavorites.length + normalizedHistory.length
-  };
-
-  if (profile.trackCount < 5 && (!clientProfile || clientProfile.trackCount < 5)) {
-    return { profile, tracks: [] };
-  }
-
-  const queries = buildDiscoveryQueries(profile);
-  const candidateMap = new Map();
-
-  for (const query of queries) {
-    try {
-      const results = await searchSoundcloud(query, 14);
-      for (const track of results) {
-        const scored = scoreDiscoveryCandidate(track, profile, heardKeys, heardIds);
-        if (scored) {
-          if (!candidateMap.has(scored.id) || candidateMap.get(scored.id).score < scored.score) {
-            candidateMap.set(scored.id, scored);
-          }
-        }
-      }
-      if (candidateMap.size >= limit * 2) {
-        break;
-      }
-    } catch (e) {}
-  }
-
-  let ranked = Array.from(candidateMap.values()).sort((a, b) => b.score - a.score);
-
-  const unshown = ranked.filter(t => !recentlyRecommendedTrackIds.has(t.id));
-  if (unshown.length >= limit) {
-    ranked = unshown;
-  }
-
-  const artistTrackCount = {};
-  const finalTracks = [];
-  for (const track of ranked) {
-    const a = normalizeArtistName(track.artist);
-    if ((artistTrackCount[a] || 0) < 2) {
-      artistTrackCount[a] = (artistTrackCount[a] || 0) + 1;
-      finalTracks.push(track);
-      recentlyRecommendedTrackIds.add(track.id);
-      const nKey = getTrackNormalizedKey(track.artist, track.title);
-      if (nKey) recentlyRecommendedKeys.add(nKey);
-      if (recentlyRecommendedTrackIds.size > 100) {
-        const first = recentlyRecommendedTrackIds.values().next().value;
-        recentlyRecommendedTrackIds.delete(first);
-      }
-      if (recentlyRecommendedKeys.size > 100) {
-        const firstK = recentlyRecommendedKeys.values().next().value;
-        recentlyRecommendedKeys.delete(firstK);
-      }
-      if (finalTracks.length >= limit) break;
-    }
-  }
-
-  return {
-    profile,
-    tracks: finalTracks
-  };
-}
-
+const genreLookup = require('./recommendations').createGenreLookup({directory: DATA_DIR});
 function directYoutubeSearch(query, filterSpam = false) {
   return new Promise((resolve) => {
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
@@ -663,6 +505,8 @@ async function downloadTrackToDisk(trackUrl, trackId, platform, meta = {}) {
 const IOS_AUDIO_FORMAT = "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[acodec^=aac]/bestaudio[protocol*=m3u8]/best[ext=mp4]";
 function mobileCachedFile(file, mobile) { return file && (!mobile || /\.(m4a|mp3|aac|wav|mp4|aif|aiff|caf)$/i.test(file)); }
 async function resolveAudioStream(trackUrl, trackId, platform, refresh = false, mobile = false) {
+  if (!hostServices.includes(platform)) throw new Error('This streaming service is turned off in Settings.');
+  if (platform === 'audius') return audius.stream(trackId);
   if (platform === 'spotify') throw new Error('Spotify plays through the native player.');
   if (!trackUrl) throw new Error('This track has no playable source URL.');
   const key = `${platform}:${cleanTrackId(trackId)}:${trackUrl}:${mobile ? "ios" : "desktop"}`;
@@ -698,23 +542,29 @@ async function prefetchTrack(trackUrl, trackId, platform) {
 }
 
 async function handleSearch(req, res, query, platform = 'auto', limit = 20, quiet = false, progressive = false) {
+  const services = requestServices(req);
+  if (platform !== 'auto' && !services.includes(platform)) { res.writeHead(200, {'Content-Type':'application/json'}); return res.end(JSON.stringify({success:false,tracks:[],error:'This service is turned off in Settings.'})); }
   limit = Math.max(1,Math.min(50,Number(limit)||20)); query = String(query).slice(0,250);
   if (platform === 'auto') {
     const collect = source => new Promise(resolve => {
       const sink = {writeHead() {}, end(body) {try {resolve(JSON.parse(body).tracks || []);} catch {resolve([]);}}};
       handleSearch(req, sink, query, source, Math.min(limit, 10), true).catch(() => resolve([]));
     });
-    const connected=Boolean(spotifyProvider?.status().playbackConnected);
+    const connected=services.includes('spotify') && Boolean(spotifyProvider?.status().connected);
     const sourceContext=connected?'spotify':'public';
-    const providers=['youtube','ytmusic','soundcloud'].map(source=>()=>collect(source));
+    const providers=services.filter(s=>s!=='spotify').map(source=>()=>collect(source));
     if(connected)providers.push(()=>spotifyProvider.search(query));
     if(progressive)res.writeHead(200,{'Content-Type':'application/x-ndjson','Cache-Control':'no-store'});
-    const result=await progressiveSearch(`${sourceContext}:${query.trim().toLowerCase()}:${limit}`,providers,
+    const result=await progressiveSearch(`${services.join(",")}:${sourceContext}:${query.trim().toLowerCase()}:${limit}`,providers,
       batches=>selectSources(batches,query,limit).map(track=>({...track,sourceContext})),
       update=>{if(progressive && !res.destroyed)res.write(JSON.stringify(update)+'\n');});
     if(progressive){if(!res.destroyed)res.end();return;}
     res.writeHead(200, {'Content-Type':'application/json'});
     return res.end(JSON.stringify({...result,...(!result.success?{error:'No sources are available. Try again.'}:{})}));
+  }
+  if (platform === 'audius') {
+    try { const tracks = await audius.search(query, limit); res.writeHead(200, {'Content-Type':'application/json'}); return res.end(JSON.stringify({success:true,tracks})); }
+    catch { res.writeHead(200, {'Content-Type':'application/json'}); return res.end(JSON.stringify({success:false,tracks:[]})); }
   }
   const cacheKey = `${platform}:${query}:${limit}`;
   if (searchCache.has(cacheKey)) {
@@ -892,24 +742,32 @@ async function handleSearch(req, res, query, platform = 'auto', limit = 20, quie
 }
 
 async function handleVibeRecommendations(req, res, payload) {
-  const historyTracks = Array.isArray(payload?.history) ? payload.history : [];
-  const favoriteTracks = [...(Array.isArray(payload?.favorites) ? payload.favorites : []), ...(spotifyProvider?.status().tracks || []), ...(spotifyProvider?.status().shelf || []).flatMap(a => a.tracks || [])];
-  const platform = 'soundcloud';
-  const limit = Math.max(4, Math.min(parseInt(payload?.limit || '10', 10) || 10, 16));
-  const clientProfile = payload?.clientProfile || null;
-
+  const services = requestServices(req, payload?.services);
+  const collect = async (query, providers, index, genre) => {
+    const selected = providers.filter(s=>s!=='spotify');
+    const publicSource = selected.length ? selected[index % selected.length] : null;
+    const jobs = [];
+    if (publicSource) jobs.push(new Promise(resolve => {
+      const request = {...req, url:'/api/search?services='+encodeURIComponent(services.join(','))};
+      const sink = {writeHead(){}, end(body){try {resolve(JSON.parse(body).tracks || []);}catch{resolve([]);}}};
+      handleSearch(request,sink,query,publicSource,12,true).catch(()=>resolve([]));
+    }));
+    if (services.includes('spotify') && spotifyProvider?.status().connected) jobs.push(spotifyProvider.search(genre ? 'genre:"'+genre.replace(/"/g,'')+'"' : query).then(tracks=>genre?tracks.map(t=>({...t,genres:[genre]})):tracks).catch(()=>[]));
+    return (await Promise.all(jobs)).flat();
+  };
+  const recommend = require('./recommendations').createRecommendations({lookup: genreLookup, search: collect});
   try {
-    const result = await recommendVibeTracks(historyTracks, favoriteTracks, platform, limit, clientProfile);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true, ...result }));
-  } catch (error) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: false, error: error.message }));
-  }
+    const result = await recommend({history:Array.isArray(payload?.history)?payload.history.slice(0,100):[],
+      favourites:Array.isArray(payload?.favorites)?payload.favorites.slice(0,100):[],
+      playlists:Array.isArray(payload?.playlists)?payload.playlists.slice(0,100):[],
+      seen:Array.isArray(payload?.seen)?payload.seen.filter(v=>typeof v==='string').slice(0,100):[], genre:String(payload?.genre || 'all').toLowerCase(), limit:Math.max(1,Math.min(20,Number(payload?.limit)||20)), enabled:services});
+    res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({success:true,...result}));
+  } catch { res.writeHead(502, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'Recommendations are unavailable. Try again shortly.'})); }
 }
 
 async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube', title = '', artist = '', duration = 0, thumbnail = '') {
   const mobile = url.parse(req.url, true).query.mobile === '1';
+  if (platform !== 'local' && !requestServices(req).includes(platform)) { res.writeHead(403, {'Content-Type':'application/json'}); return res.end(JSON.stringify({error:'This service is turned off in Settings.'})); }
   const cleanId = cleanTrackId(trackId);
   if (platform === 'local' && libraryIndex[cleanId]?.file) {
     res.writeHead(200, {'Content-Type':'application/json'});
@@ -1623,6 +1481,8 @@ const server = http.createServer(async (req, res) => {
     const artist = parsedUrl.query.artist || '';
     const format = parsedUrl.query.format || 'mp3';
     const quality = parsedUrl.query.quality || '0';
+    const source = parsedUrl.query.platform || (/soundcloud\.com/.test(trackUrl)?'soundcloud':/audius\.co/.test(trackUrl)?'audius':'youtube');
+    if (!requestServices(req).includes(source)) { res.writeHead(403, {'Content-Type':'application/json'}); return res.end(JSON.stringify({error:'This service is turned off in Settings.'})); }
     return handleDownload(req, res, trackUrl, title, artist, format, quality);
   }
 
@@ -1647,18 +1507,21 @@ const server = http.createServer(async (req, res) => {
       try {
         const payload=JSON.parse(body),original=payload.track;
         if(!original?.id || typeof original.url!=='string')throw new Error('This song has no source URL.');
-        const status=spotifyProvider?.status() || {};
+        const services=requestServices(req,payload.services);
+        req.url += (req.url.includes('?')?'&':'?')+'services='+encodeURIComponent(services.join(','));
+        const status=services.includes('spotify') ? spotifyProvider?.status() || {} : {};
         const known=[...(original.alternatives||[]),...(status.tracks||[]),...(status.likedTracks||[])].filter(t=>sameRecording(original,t));
         const excluded=new Set(Array.isArray(payload.exclude)?payload.exclude:[]);
         const appleAudio=Boolean(payload.mobile || payload.nativeApple);
-        const usable=t=>t.platform!=='spotify'||(!payload.mobile && status.playbackConnected);
+        const usable=t=>services.includes(t.platform) && (t.platform!=='spotify'||(!payload.mobile && status.playbackConnected));
         const cached=await findCachedFile(original.id);
-        if(mobileCachedFile(cached, appleAudio) && !payload.refresh && !excluded.has(original.platform+':'+original.id)){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:original,stream:{success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(original.id))}`}}));}
+        if(usable(original) && mobileCachedFile(cached, appleAudio) && !payload.refresh && !excluded.has(original.platform+':'+original.id)){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:original,stream:{success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(original.id))}`}}));}
         const native=[original,...known].find(t=>t.playable!==false&&t.platform==='spotify'&&usable(t)&&!excluded.has(t.platform+':'+t.id));
         if(native){res.writeHead(200,{'Content-Type':'application/json'});return res.end(JSON.stringify({success:true,track:{...native,alternatives:[original,...known].filter(t=>t!==native)}}));}
         const resolve=async t=>{
+          if (!usable(t)) throw new Error('This streaming service is turned off in Settings.');
           if(t.platform==='spotify'){if(payload.mobile)throw new Error('Spotify plays through the iOS SDK.');if(!status.playbackConnected)throw new Error('Connect Spotify playback first.');return {native:true};}
-          if(!['youtube','ytmusic','soundcloud'].includes(t.platform))throw new Error('Unsupported audio source.');
+          if(!['youtube','ytmusic','soundcloud','audius'].includes(t.platform))throw new Error('Unsupported audio source.');
           if(!/^https?:\/\//.test(t.url))throw new Error('Invalid source URL.');
           const file=await findCachedFile(t.id);
           if(mobileCachedFile(file, appleAudio)&&!payload.refresh)return {success:true,isLocal:true,streamUrl:`http://127.0.0.1:${serverPort}/api/local-track?id=${encodeURIComponent(cleanTrackId(t.id))}`};
@@ -1678,7 +1541,7 @@ const server = http.createServer(async (req, res) => {
   if (parsedUrl.pathname === '/api/resolve-source') {
     const title = String(parsedUrl.query.title || '').slice(0,250), artist = String(parsedUrl.query.artist || '').slice(0,150);
     const original = {id:String(parsedUrl.query.id || ''),title,artist,duration:Number(parsedUrl.query.duration)||0,platform:String(parsedUrl.query.platform||'youtube'),url:String(parsedUrl.query.url||'')};
-    const requested = ['youtube','ytmusic','soundcloud','spotify'].includes(parsedUrl.query.source) ? parsedUrl.query.source : 'auto';
+    const requested = SERVICES.includes(parsedUrl.query.source) ? parsedUrl.query.source : 'auto';
     const excluded = new Set(String(parsedUrl.query.exclude||'').split(','));
     const sink = {writeHead(){},async end(body){
       let tracks=[];try{tracks=JSON.parse(body).tracks||[];}catch{}
@@ -1690,12 +1553,12 @@ const server = http.createServer(async (req, res) => {
       await Promise.all(likely.map(async t=>{try{const info=JSON.parse(await executeYtDlp(['--dump-single-json','--skip-download','--no-playlist',t.url],20000));t.duration=info.duration||t.duration;t.artist=(info.artist||info.artists?.join(', ')||info.channel||info.uploader||t.artist).replace(/\s*-\s*Topic$/i,'');}catch{}}));
       const matches=candidates.filter(t=>sameRecording(original,t));
       if(original.platform==='spotify'&&!spotifyProvider?.status().playbackConnected)original.playable=false;
-      const available=[original,...matches].filter(t=>!excluded.has(t.platform+':'+t.id)&&(requested==='auto'||t.platform===requested));
+      const available=[original,...matches].filter(t=>requestServices(req).includes(t.platform)&&!excluded.has(t.platform+':'+t.id)&&(requested==='auto'||t.platform===requested));
       const best=selectSources(available,artist+' '+title,1)[0];
       res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(best?{success:true,track:{...best,sourceContext:spotifyProvider?.status().connected?'spotify':'public'}}:{success:false,error:'No matching recording is available from '+(requested==='auto'?'another source':requested)+'.'}));
     }};
     if(requested==='spotify') {
-      try {sink.end(JSON.stringify({tracks:spotifyProvider?.status().connected?await spotifyProvider.search(artist+' '+title):[]}));}catch{sink.end('{}');}
+      try {sink.end(JSON.stringify({tracks:requestServices(req).includes('spotify')&&spotifyProvider?.status().connected?await spotifyProvider.search(artist+' '+title):[]}));}catch{sink.end('{}');}
       return;
     }
     return handleSearch(req,sink,artist+' '+title,requested,10,true);
@@ -1703,9 +1566,10 @@ const server = http.createServer(async (req, res) => {
 
   if (parsedUrl.pathname === '/api/vibe'  && req.method === 'POST') {
     let body = '';
-    req.on('data', chunk => body += chunk);
+    let tooLarge=false;
+    req.on('data', chunk => { if(tooLarge)return; body += chunk; if(body.length>300000){tooLarge=true;res.writeHead(413);res.end();} });
     req.on('end', () => {
-      const payload = safeJsonParse(body, {});
+      if(tooLarge)return; const payload = safeJsonParse(body, {});
       handleVibeRecommendations(req, res, payload);
     });
     return;
@@ -2049,7 +1913,7 @@ function stopServer() {
   });
 }
 
-module.exports = { startServer, stopServer, PORT, setSpotifyProvider };
+module.exports = { startServer, stopServer, PORT, setSpotifyProvider, setStreamingServices };
 
 if (require.main === module) {
   startServer();

@@ -4,6 +4,8 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const root=path.resolve(__dirname,'..');
 const send=value=>process.stdout.write(JSON.stringify(value)+'\n');
 console.log=()=>{};console.warn=()=>{};console.error=()=>{};
+const {DEFAULTS, SERVICES, enabledServices}=require('../streaming-services');
+let streaming=DEFAULTS;
 let spotify,lyrics,shelfSync,offlineDownloads,port,closing=false,searchAbort;
 const discord = new (require('./discord-presence').DiscordPresence)({emit: value => send({event: 'discord', value})});
 const serviceToken=crypto.randomBytes(32).toString('hex');
@@ -23,14 +25,18 @@ async function invoke(method,args) {
   spotify=createSpotify({directory,safeStorage:secureStore(Buffer.from(args.key,'base64')),tokenName:'spotify-account-native.enc',binary:process.env.RIFF_RIFFSPOTIFYPLAYER,openExternal:url=>send({event:'openURL',url}),emit:value=>send({event:'spotify',value})});
   lyrics=new (require('./lyrics-service').LyricsService)({directory,store:secureStore(Buffer.from(args.key,'base64')),fallback:async(title,artist)=>{const value=await invoke('api',{path:'/api/lyrics?'+new URLSearchParams({title,artist})});return value.lyrics||'';}});
   process.env.CUDA_NATIVE_SERVICE_TOKEN=serviceToken;
-  const server=require('../server');server.setSpotifyProvider(spotify);port=await server.startServer(0);
+  try { streaming=enabledServices(JSON.parse(fs.readFileSync(path.join(directory,'streaming-services.json'))),SERVICES); } catch {}
+  if(Array.isArray(args.services))streaming=enabledServices(args.services,SERVICES);
+  const server=require('../server');server.setStreamingServices(streaming);server.setSpotifyProvider(spotify);port=await server.startServer(0);
   const companion=new (require('./mobile-companion').MobileCompanion)({upstream:'http://127.0.0.1:'+port,serviceToken});
   offlineDownloads=new (require('./offline-downloads').OfflineDownloads)({directory,resolve:async track=>{
+   if(!streaming.includes(track.platform)&&track.platform!=='local')throw Error('This service is turned off in Settings.');
+   if(track.platform==='audius'){const info=await require('../audius-service').createAudius().stream(track.id);return {...info.metadata,streamUrl:info.streamUrl};}
    if(track.platform!=='spotify')return track;
    const value=await invoke('api',{path:'/api/playback-source',body:{track,exclude:[track.platform+':'+track.id],mobile:true}});return value.track;
   }});
   shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send,companion,offlineDownloads,integrations:async()=>({
-   spotify:await spotify.mobileSession(),
+   spotify:streaming.includes('spotify')?await spotify.mobileSession():null,
    lyrics:Object.fromEntries(['musixmatch','lyricfindSearch','lyricfindDisplay','genius','territory'].map(key=>[key,String(lyrics.keys[key]||'')])),
    lastfm:{username:String(spotify.status().lastfm?.username||''),apiKey:String(spotify.status().lastfm?.apiKey||'')}
   }),listenPort:process.env.CUDA_NATIVE_TEST_SYNC_PORT==='0'?0:38474});
@@ -51,11 +57,13 @@ async function invoke(method,args) {
  if(method==='lyricsConfigure')return lyrics.configure(args);
  if(method==='lyricsGet')return lyrics.get(args);
  if(method==='lyricsViewed'){await lyrics.viewed(args.token);return {};}
+ if(method==='servicesConfigure'){streaming=enabledServices(args.services,SERVICES);fs.writeFileSync(path.join(process.env.RIFF_DATA_DIR,'streaming-services.json.tmp'),JSON.stringify(streaming),{mode:0o600});fs.renameSync(path.join(process.env.RIFF_DATA_DIR,'streaming-services.json.tmp'),path.join(process.env.RIFF_DATA_DIR,'streaming-services.json'));require('../server').setStreamingServices(streaming);searchAbort?.abort();return {services:streaming};}
+ if(method==='spotify'&&!streaming.includes('spotify')&&(!['status','disconnect','playback'].includes(args.operation)||args.operation==='playback'&&!['stop','pause'].includes(args.values?.[0])))throw Error('Spotify is turned off in Settings.');
  if(method==='spotify')return spotify.invoke(args.operation,args.values||[]);
  if(method==='search') {
   searchAbort?.abort();searchAbort=new AbortController();const controller=searchAbort;
   const query=String(args.query||'').slice(0,250);const token=String(args.token||'');
-  const u=new URL('/api/search','http://127.0.0.1:'+port);u.search=new URLSearchParams({q:query,platform:'auto',limit:'30',progressive:'1'}).toString();
+  const u=new URL('/api/search','http://127.0.0.1:'+port);u.search=new URLSearchParams({q:query,platform:'auto',limit:'30',progressive:'1',services:streaming.join(',')}).toString();
   const response=await fetch(u,{headers:{'X-Cuda-Native-Token':serviceToken},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])});if(!response.ok)throw new Error('Search is unavailable. Try again.');
   let tail='',last={tracks:[]};const decoder=new TextDecoder();
   for await(const chunk of response.body){tail+=decoder.decode(chunk,{stream:true});let index;while((index=tail.indexOf('\n'))>=0){const line=tail.slice(0,index);tail=tail.slice(index+1);try{last=JSON.parse(line);send({event:'search',token,value:privateMedia(last)});}catch{}}}

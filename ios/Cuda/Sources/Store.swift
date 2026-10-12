@@ -9,6 +9,10 @@ final class Store: ObservableObject {
     @Published var state = CollectionState()
     @Published var results: [Track] = []
     @Published var recommendations: [Track] = []
+    @Published var listenedGenres: [String] = []
+    @Published var mood = "all"
+    private var recommendationPending = false
+    private var recommendationRevision = UUID()
     @Published var searching = false
     @Published var refreshing = false
     @Published var message: String?
@@ -52,6 +56,16 @@ final class Store: ObservableObject {
         func migrate(_ track: Track) -> Track { var t = track; if t.platform == "local", t.id.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil { t.id = "local_" + String(t.id.prefix(12)) }; return t }
         state.local = state.local.map(migrate); state.favourites = state.favourites.map(migrate); state.history = state.history.map(migrate)
         state.playlists = state.playlists.map { var p = $0; p.tracks = p.tracks.map(migrate); if let id = p.spotifyID { p.id = "spotify-" + id }; return p }
+        StreamingPreferences.shared.changed = { [weak self] values in self?.servicesChanged(values) }
+    }
+    private func servicesChanged(_ values: [String]) {
+        recommendationRevision = UUID()
+        results = []; recommendations = []
+        player.objectWillChange.send()
+        if player.source != .auto && !values.contains(player.source.rawValue) { player.source = .auto }
+        if let current = player.current, current.platform != "local", !player.offlinePlaying, !values.contains(current.platform) { player.stop() }
+        searchGeneration = UUID(); searching = false
+        Task { await refreshRecommendations() }
     }
     func save() {
         do { try JSONEncoder().encode(state).write(to: root.appendingPathComponent("shelf.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]); deviceSync.recordChange() }
@@ -65,7 +79,7 @@ final class Store: ObservableObject {
         let liked = !state.favourites.contains { $0.key == track.key }
         if liked { state.favourites.append(track) } else { state.favourites.removeAll { $0.key == track.key } }
         save()
-        if track.platform == "spotify", spotify.hasToken {
+        if track.platform == "spotify", spotify.hasToken, StreamingPreferences.shared.allows("spotify") {
             let previous = favouriteSync[track.key]
             favouriteSync[track.key] = Task {
                 _ = await previous?.result
@@ -134,7 +148,7 @@ final class Store: ObservableObject {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { results = []; searching = false; return }
         searching = true
-        let local = Track.unique(state.local + state.favourites + state.playlists.flatMap(\.tracks)).filter { ($0.title + " " + $0.artist).localizedCaseInsensitiveContains(query) }
+        let local = Track.unique(state.local + state.favourites + state.playlists.flatMap(\.tracks)).filter { StreamingPreferences.shared.allows($0.platform) && ($0.title + " " + $0.artist).localizedCaseInsensitiveContains(query) }
         results = local
         do { try await Task.sleep(for: .milliseconds(220)); try Task.checkCancellation() } catch { if searchGeneration == key { searching = false }; return }
         async let publicTracks = searchCompanion(query)
@@ -145,6 +159,7 @@ final class Store: ObservableObject {
         if results.isEmpty { message = "No songs found. Try another search, connect Spotify, or pair your Mac in Settings." }
     }
     private func searchSpotify(_ query: String) async -> [Track] {
+        guard StreamingPreferences.shared.allows("spotify") else { return [] }
         if !spotify.hasToken { await deviceSync.refreshPlaybackConnection() }
         return await spotify.searchAvailable(query)
     }
@@ -153,17 +168,42 @@ final class Store: ObservableObject {
         guard !Task.isCancelled else { return [] }
         return (try? await companion.search(query)) ?? []
     }
+    func selectGenre(_ genre: String) {
+        guard genre == "all" || listenedGenres.contains(genre), genre != mood else { return }
+        mood = genre; recommendationRevision = UUID(); recommendations = []
+        Task { await refreshRecommendations() }
+    }
     func refreshRecommendations() async {
-        guard !refreshing else { return }; refreshing = true; defer { refreshing = false }
-        let taste = Track.unique(state.favourites + state.playlists.flatMap(\.tracks) + state.history)
-        let seed = taste.first
-        guard let seed else { recommendations = []; return }
-        let query = seed.artist == "Unknown artist" ? seed.title : seed.artist
-        async let remote: [Track] = { [companion] in (try? await companion.search(query)) ?? [] }()
-        async let spotifyTracks = searchSpotify(query)
-        let tracks = await remote + spotifyTracks
-        let recent = Set(state.history.prefix(8).map(\.key))
-        recommendations = Array(Track.unique(tracks + taste).filter { !recent.contains($0.key) }.prefix(20))
+        if refreshing { recommendationPending = true; return }; refreshing = true; defer { refreshing = false; if recommendationPending { recommendationPending = false; Task { await refreshRecommendations() } } }
+        let revision = recommendationRevision
+        do {
+            await deviceSync.refreshPlaybackConnection()
+            let response = try await companion.recommendations(history: Array(state.history.prefix(100)), favourites: Array(state.favourites.prefix(100)), playlists: Array(state.playlists.flatMap(\.tracks).prefix(100)), genre: mood, seen: recommendations.map(\.key))
+            guard revision == recommendationRevision else { return }
+            listenedGenres = response.genres ?? []; mood = response.genre ?? "all"
+            recommendations = (response.tracks ?? []).filter { StreamingPreferences.shared.allows($0.platform) }
+            for track in response.learned ?? [] { if let index = state.history.firstIndex(where: { $0.key == track.key }) { state.history[index].genres = track.genres } }
+            save()
+        } catch {
+            guard revision == recommendationRevision else { return }
+            // With no companion, keep genuine known genres and use the iPhone's Spotify catalog.
+            if !StreamingPreferences.shared.enabled.isEmpty {
+                for track in state.history.prefix(3) { let learned = await GenreCatalog.shared.enrich(track); if let index = state.history.firstIndex(where: { $0.key == track.key }) { state.history[index].genres = learned.genres } }
+                save()
+            }
+            listenedGenres = Array(Set(state.history.flatMap { $0.genres ?? [] })).sorted()
+            if mood != "all" && !listenedGenres.contains(mood) { mood = "all" }
+            let taste = state.history.filter { mood == "all" || ($0.genres ?? []).contains(mood) }
+            let artists = Array(NSOrderedSet(array: taste.map(\.artist))).compactMap { $0 as? String }.filter { $0 != "Unknown artist" }.prefix(3)
+            var candidates: [Track] = []
+            for artist in artists { candidates += await searchSpotify(artist) }
+            guard revision == recommendationRevision else { return }
+            let recent = Set(state.history.prefix(12).map(\.key)); var counts: [String: Int] = [:]
+            recommendations = Array(Track.unique(candidates).filter { t in
+                guard !recent.contains(t.key), (counts[t.artist] ?? 0) < 2 else { return false }
+                counts[t.artist, default: 0] += 1; return true
+            }.prefix(20))
+        }
     }
     func loadSpotifyPlaylists() async {
         syncing = true; defer { syncing = false }
@@ -211,7 +251,7 @@ final class Store: ObservableObject {
         if let tone = Bundle.main.url(forResource: "preview", withExtension: "wav") { try? FileManager.default.copyItem(at: tone, to: audioRoot.appendingPathComponent("preview.wav")) }
         state.local = tracks; state.favourites = Array(tracks.prefix(2)); state.history = tracks
         state.playlists = [Playlist(name: "Evening rotation", description: "For the way home", tracks: tracks), Playlist(name: "A little quieter", description: "Room to breathe", tracks: Array(tracks.suffix(2)))]
-        recommendations = tracks
+        recommendations = tracks; listenedGenres = ["ambient", "electronic"]
     }
     #endif
 }

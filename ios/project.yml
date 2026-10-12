@@ -10,8 +10,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: '5.0'
-    MARKETING_VERSION: '1.1.3'
-    CURRENT_PROJECT_VERSION: '6'
+    MARKETING_VERSION: '1.1.4'
+    CURRENT_PROJECT_VERSION: '7'
     CODE_SIGN_STYLE: Automatic
 targets:
   Cuda:
@@ -21,6 +21,10 @@ targets:
       - Cuda/Sources
       - path: Cuda/Resources
         excludes: [Assets.xcassets/AppIcon.appiconset]
+      - ../shared/GenreSelector.swift
+      - ../shared/GenreCatalog.swift
+      - ../shared/StreamingPreferences.swift
+      - ../shared/GitHubUpdates.swift
       - ../shared/SyncState.swift
       - ../shared/OfflinePlaylistState.swift
       - path: ../assets/Cuda.icon

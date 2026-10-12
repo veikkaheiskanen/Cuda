@@ -13,13 +13,15 @@ struct CudaApp: App {
                 .tint(.blue)
                 .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
                 .onOpenURL { if $0.scheme == "cuda-sync" { store.deviceSync.offer($0) } else { store.spotify.handle($0) } }
+                .modifier(UpdatePrompt())
                 .modifier(DeviceSyncPrompt(sync: store.deviceSync))
                 .onChange(of: phase) { _, phase in
-                    if phase == .active { store.spotify.foreground(); store.deviceSync.activate(true) }
+                    if phase == .active { AppUpdates.shared.activate(); store.spotify.foreground(); store.deviceSync.activate(true) }
                     if phase != .active { store.spotify.background() }
                     if phase == .background { store.deviceSync.activate(false) }
                 }
                 .onAppear {
+                    AppUpdates.shared.activate()
                     store.deviceSync.activate(true)
                     #if DEBUG
                     store.seedPreview()

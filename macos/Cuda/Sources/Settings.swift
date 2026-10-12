@@ -52,6 +52,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Header(title: "Settings").padding(.horizontal, 28).padding(.top, 28)
             Form {
+                StreamingSettings()
                 Section("Appearance") {
                     Picker("Theme", selection: $theme) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
                     Toggle("Window transparency", isOn: $transparency)
@@ -79,9 +80,10 @@ struct SettingsView: View {
                 DiscordSettings(presence: store.discord)
                 LyricsSettings(runtime: store.runtime)
                 Section("Your Shelf") { Button("Export Shelf backup", systemImage: "square.and.arrow.up") { store.exportShelf() }; Button("Import Shelf backup", systemImage: "square.and.arrow.down") { store.importShelf() } }
+                UpdateSettings()
                 Section("About") {
                     Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.8")
+                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.9")
                     Button("About Cuda") { about = true }
                 }
             }.formStyle(.grouped).scrollContentBackground(.hidden)

@@ -4,10 +4,11 @@ const {pipeline}=require('node:stream/promises');const {Transform}=require('node
 const hashPattern=/^[a-f0-9]{64}$/,extensions=new Set(['mp3','m4a','aac','wav','flac','aif','aiff','ogg','opus','webm','mp4']);
 const MAX_FILE=512*1024*1024;
 function cleanTrack(value){
- if(!value||typeof value.id!=='string'||value.id.length>160||typeof value.platform!=='string'||!['local','spotify','youtube','ytmusic','soundcloud'].includes(value.platform))throw Error('Invalid song.');
+ if(!value||typeof value.id!=='string'||value.id.length>160||typeof value.platform!=='string'||!['local','spotify','youtube','ytmusic','soundcloud','audius'].includes(value.platform))throw Error('Invalid song.');
  const t={id:value.id,title:String(value.title||'Untitled').slice(0,300),artist:String(value.artist||'Unknown artist').slice(0,300),platform:value.platform,url:''};
  for(const key of ['url','thumbnail'])if(typeof value[key]==='string'){try{const u=new URL(value[key]);if(u.protocol==='https:'&&!u.username&&!u.password&&![...u.searchParams.keys()].some(k=>['pair','token','native_token'].includes(k)))t[key]=u.href;}catch{}}
  if(Number.isFinite(value.duration)&&value.duration>=0)t.duration=value.duration;
+ if(Array.isArray(value.genres))t.genres=value.genres.filter(g=>typeof g==='string'&&g.length<=64).slice(0,5);
  return t;
 }
 function validateRecords(input){

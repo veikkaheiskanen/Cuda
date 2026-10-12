@@ -9,7 +9,7 @@ launch_preview() {
   local container
   container=$(xcrun simctl get_app_container "$DEVICE" com.veikkaheiskanen.Cuda data)
   rm -f "$container/Documents/preview-ready"
-  SIMCTL_CHILD_CUDA_PREVIEW_AUDIO="${2:-0}" SIMCTL_CHILD_CUDA_DEMO=1 SIMCTL_CHILD_CUDA_PREVIEW_PLAYER="${1:-0}" xcrun simctl launch "$DEVICE" com.veikkaheiskanen.Cuda
+  SIMCTL_CHILD_CUDA_PREVIEW_SETTINGS="${3:-0}" SIMCTL_CHILD_CUDA_PREVIEW_AUDIO="${2:-0}" SIMCTL_CHILD_CUDA_DEMO=1 SIMCTL_CHILD_CUDA_PREVIEW_PLAYER="${1:-0}" xcrun simctl launch "$DEVICE" com.veikkaheiskanen.Cuda
   for attempt in {1..60}; do
     if [ -f "$container/Documents/preview-ready" ]; then sleep 8; return; fi
     sleep 1
@@ -39,5 +39,8 @@ for DEVICE in "$PHONE" "$IPAD"; do
   xcrun simctl terminate "$DEVICE" com.veikkaheiskanen.Cuda || true
   launch_preview 1 1
   xcrun simctl io "$DEVICE" screenshot "build/screenshots/cuda-$CLASS-audio.png"
+  xcrun simctl terminate "$DEVICE" com.veikkaheiskanen.Cuda || true
+  launch_preview 0 0 1
+  xcrun simctl io "$DEVICE" screenshot "build/screenshots/cuda-$CLASS-settings.png"
   xcrun simctl shutdown "$DEVICE"
 done

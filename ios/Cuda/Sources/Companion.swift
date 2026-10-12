@@ -57,14 +57,23 @@ struct Companion {
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
+    @MainActor
+    private var serviceItems: [URLQueryItem] { [.init(name: "services", value: StreamingPreferences.shared.enabled.joined(separator: ","))] }
+    @MainActor
+    func recommendations(history: [Track], favourites: [Track], playlists: [Track], genre: String, seen: [String]) async throws -> RecommendationResponse {
+        let body = try JSONSerialization.data(withJSONObject: ["history": JSONSerialization.jsonObject(with: JSONEncoder().encode(history)), "favorites": JSONSerialization.jsonObject(with: JSONEncoder().encode(favourites)), "playlists": JSONSerialization.jsonObject(with: JSONEncoder().encode(playlists)), "genre": genre, "seen": seen, "services": StreamingPreferences.shared.enabled, "limit": 20])
+        return try await request("/api/vibe", body: body)
+    }
+    @MainActor
     func search(_ query: String, source: Source = .auto) async throws -> [Track] {
-        let result: SearchResponse = try await request("/api/search", items: [.init(name: "q", value: query), .init(name: "platform", value: source.rawValue), .init(name: "limit", value: "20")])
+        let result: SearchResponse = try await request("/api/search", items: [.init(name: "q", value: query), .init(name: "platform", value: source.rawValue), .init(name: "limit", value: "20")] + serviceItems)
         return result.tracks ?? []
     }
+    @MainActor
     func stream(_ track: Track, source: Source, excluded: [String] = []) async throws -> (Track, URL) {
         if source == .auto {
             // Exclude Mac-native Spotify: its audio is played locally by the official iOS SDK.
-            let body = try JSONSerialization.data(withJSONObject: ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track)), "exclude": excluded, "mobile": true])
+            let body = try JSONSerialization.data(withJSONObject: ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track)), "exclude": excluded, "mobile": true, "services": StreamingPreferences.shared.enabled])
             let value: PlaybackResponse = try await request("/api/playback-source", body: body)
             guard let selected = value.track, selected.platform != "spotify", let raw = value.stream?.proxyUrl ?? value.stream?.streamUrl ?? value.stream?.url, let url = URL(string: raw) else {
                 throw CudaError.message(value.error ?? "This source could not start. Choose another source and retry.")
@@ -73,10 +82,10 @@ struct Companion {
         }
         var selected = track
         if source.rawValue != track.platform {
-            let result: PlaybackResponse = try await request("/api/resolve-source", items: [.init(name: "title", value: track.title), .init(name: "artist", value: track.artist), .init(name: "source", value: source.rawValue), .init(name: "id", value: track.id), .init(name: "platform", value: track.platform), .init(name: "url", value: track.url), .init(name: "duration", value: String(track.duration ?? 0))])
+            let result: PlaybackResponse = try await request("/api/resolve-source", items: [.init(name: "title", value: track.title), .init(name: "artist", value: track.artist), .init(name: "source", value: source.rawValue), .init(name: "id", value: track.id), .init(name: "platform", value: track.platform), .init(name: "url", value: track.url), .init(name: "duration", value: String(track.duration ?? 0))] + serviceItems)
             guard let match = result.track else { throw CudaError.message(result.error ?? "No matching recording on this source.") }; selected = match
         }
-        let value: StreamInfo = try await request("/api/stream-info", items: [.init(name: "id", value: selected.id), .init(name: "url", value: selected.url), .init(name: "platform", value: selected.platform)])
+        let value: StreamInfo = try await request("/api/stream-info", items: [.init(name: "id", value: selected.id), .init(name: "url", value: selected.url), .init(name: "platform", value: selected.platform)] + serviceItems)
         guard let raw = value.proxyUrl ?? value.streamUrl ?? value.url, let url = URL(string: raw) else { throw CudaError.message(value.error ?? "No playable audio was found.") }
         return (selected, url)
     }

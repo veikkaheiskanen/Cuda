@@ -51,6 +51,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         return remote!
     }
     func connect(uri: String = "") throws {
+        guard StreamingPreferences.shared.allows("spotify") else { throw CudaError.message("Turn on Spotify in Settings to connect.") }
         let remote = try configure()
         guard UIApplication.shared.canOpenURL(URL(string: "spotify://")!) else {
             throw CudaError.message("Install Spotify on this device and sign in, then connect again.")
@@ -95,7 +96,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     }
     func foreground() {
         backgrounded = false
-        guard acceptsState, !authorizing, let remote, !remote.isConnected else { return }
+        guard StreamingPreferences.shared.allows("spotify"), acceptsState, !authorizing, let remote, !remote.isConnected else { return }
         if !accessToken.isEmpty, tokenExpires > Date() { connectRemote(remote) }
         else if let uri = pendingURI ?? lastState?.track.uri { retrying = true; authorize(remote, uri: uri) }
     }
@@ -107,6 +108,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     }
     func disconnect() { deactivate(); accessToken = ""; tokenExpires = .distantPast; remote = nil; connected = false; artwork = nil; message = "Disconnected." }
     func play(_ track: Track) throws {
+        guard StreamingPreferences.shared.allows("spotify") else { throw CudaError.message("Spotify is turned off in Settings.") }
         guard track.id.range(of: "^[a-zA-Z0-9]{22}$", options: .regularExpression) != nil else { throw CudaError.message("This Spotify song has an invalid identifier. Search for it again.") }
         acceptsState = true; retrying = false; pendingURI = "spotify:track:" + track.id
         if authorizing { return } // A new selection replaces the pending song during app switching.
@@ -204,6 +206,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         }
     }
     func api(_ path: String, method: String = "GET") async throws -> Data {
+        guard StreamingPreferences.shared.allows("spotify") else { throw CudaError.message("Spotify is turned off in Settings.") }
         let requestToken = apiToken
         guard !requestToken.isEmpty else { throw CudaError.message("Reconnect to your paired Mac or connect Spotify in Settings.") }
         // Only Spotify's own API ever receives this token, including pagination.

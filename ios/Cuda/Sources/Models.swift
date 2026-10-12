@@ -9,11 +9,12 @@ struct Track: Codable, Identifiable, Equatable, Hashable {
     var duration: Double?
     var thumbnail: String?
     var localFile: String?
+    var genres: [String]?
     var alternatives: [Track]?
     var key: String { platform + ":" + id }
     var sourceName: String {
         switch platform { case "local": return "On this device"; case "spotify": return "Spotify"
-        case "ytmusic": return "YouTube Music"; case "soundcloud": return "SoundCloud"; default: return "YouTube" }
+        case "audius": return "Audius"; case "ytmusic": return "YouTube Music"; case "soundcloud": return "SoundCloud"; default: return "YouTube" }
     }
     static func unique(_ tracks: [Track]) -> [Track] {
         var seen = Set<String>()
@@ -41,11 +42,11 @@ enum CudaError: LocalizedError {
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 enum Source: String, CaseIterable, Identifiable {
-    case auto, spotify, youtube, ytmusic, soundcloud
+    case auto, spotify, youtube, ytmusic, soundcloud, audius
     var id: String { rawValue }
     var label: String {
         switch self { case .auto: return "Auto"; case .spotify: return "Spotify"; case .youtube: return "YouTube"
-        case .ytmusic: return "YouTube Music"; case .soundcloud: return "SoundCloud" }
+        case .ytmusic: return "YouTube Music"; case .soundcloud: return "SoundCloud"; case .audius: return "Audius" }
     }
 }
 struct SearchResponse: Decodable { var tracks: [Track]?; var error: String? }

@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['mac-native-v*']
     paths-ignore: ['ios/**', 'docs/images/**', '**.md']
   workflow_dispatch:
 
@@ -50,9 +51,9 @@ jobs:
       - name: Verify native Shelf and source identity
         run: |
           swiftc -module-cache-path macos/build/test-cache -swift-version 5 -parse-as-library macos/Cuda/Sources/Models.swift macos/Cuda/Sources/SpotifyPlaylistLink.swift macos/Tests/ModelChecks.swift -o macos/build/model-checks
-          swiftc -parse-as-library macos/Cuda/Sources/Models.swift shared/SyncState.swift shared/Tests/SyncChecks.swift -o macos/build/sync-checks
-          macos/build/sync-checks
           macos/build/model-checks
+          swiftc -parse-as-library shared/GitHubUpdates.swift shared/Tests/UpdateChecks.swift -o macos/build/update-checks
+          macos/build/update-checks
           swiftc -parse-as-library macos/Cuda/Sources/Models.swift shared/SyncState.swift shared/Tests/SyncChecks.swift -o macos/build/sync-checks
           macos/build/sync-checks
       - name: Package native app
@@ -62,3 +63,36 @@ jobs:
           name: cuda-native-macos-arm64
           path: dist/Cuda-native-mac-arm64.zip
           if-no-files-found: error
+
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/mac-native-v')
+    needs: macos-arm64
+    runs-on: macos-26
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: cuda-native-macos-arm64
+          path: release-build
+      - name: Prepare verified update signer
+        run: |
+          bash macos/scripts/prepare-updater.sh
+          ditto -x -k release-build/Cuda-native-mac-arm64.zip release-build
+      - name: Publish signed GitHub update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CUDA_SPARKLE_PRIVATE_KEY: ${{ secrets.CUDA_SPARKLE_PRIVATE_KEY }}
+        run: |
+          test -n "$CUDA_SPARKLE_PRIVATE_KEY" || { echo 'Configure CUDA_SPARKLE_PRIVATE_KEY before publishing updates.'; exit 1; }
+          CUDA_UPDATE_SIGNING_FILE="$RUNNER_TEMP/cuda-update-signing-key"
+          umask 077
+          printf '%s' "$CUDA_SPARKLE_PRIVATE_KEY" > "$CUDA_UPDATE_SIGNING_FILE"
+          trap 'rm -f "$CUDA_UPDATE_SIGNING_FILE"' EXIT
+          export CUDA_SPARKLE_KEY_FILE="$CUDA_UPDATE_SIGNING_FILE"
+          bash macos/scripts/release.sh release-build/Cuda.app release-build

@@ -24,11 +24,14 @@ decoder="${CUDA_NATIVE_DECODER:-$root/macos/build/audio-decoder/bin/ffmpeg}"
 if [[ ! -f "$decoder" ]]; then CUDA_NATIVE_TOOLS="$tools" "$root/macos/scripts/prepare-decoder.sh"; fi
 if [[ ! -d "$root/macos/node_modules" ]]; then npm ci --prefix "$root/macos" --omit=dev; fi
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/runtime" "$app/Contents/Resources/backend/macos" "$app/Contents/Resources/backend/scripts" "$app/Contents/Resources/tools"
+updater_sdk=$(bash "$root/macos/scripts/prepare-updater.sh")
+mkdir -p "$app/Contents/Frameworks"
+ditto --noextattr --noqtn --norsrc "$updater_sdk/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 flags=(-O)
 if [[ "$mode" == debug ]]; then flags=(-Onone -D DEBUG); fi
 xcrun swiftc -module-cache-path "$build/module-cache" -swift-version 5 -parse-as-library -target arm64-apple-macos26.0 "${flags[@]}" \
   "$root"/macos/Cuda/Sources/*.swift "$root"/shared/*.swift -o "$app/Contents/MacOS/Cuda" \
-  -framework SwiftUI -framework AppKit -framework AVFoundation -framework MediaPlayer -framework Security
+  -F "$updater_sdk" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks -framework SwiftUI -framework AppKit -framework AVFoundation -framework MediaPlayer -framework Security
 cp "$root/macos/Cuda/Info.plist" "$app/Contents/Info.plist"
 cp "$root/macos/Cuda/Resources/Cuda.icns" "$app/Contents/Resources/"
 icon_assets="${CUDA_NATIVE_ICON_ASSETS:-$build/icon-assets}"
@@ -47,7 +50,7 @@ if [[ "$mode" == debug ]]; then cp "$root"/macos/Cuda/Resources/*.png "$root/mac
 cp "$node_binary" "$app/Contents/Resources/runtime/node"
 node_license="$(dirname "$node_binary")/../LICENSE"
 if [[ -f "$node_license" ]]; then cp "$node_license" "$app/Contents/Resources/runtime/NODE-LICENSE"; fi
-for file in server.js platform.js tools.js tool-processes.js macos-tools.js macos-tools-manifest.json playback-resolver.js source-selection.js search-broker.js stream-utils.js spotify-service.js audio-settings.js library-import.js; do
+for file in server.js platform.js tools.js tool-processes.js macos-tools.js macos-tools-manifest.json recommendations.js streaming-services.js audius-service.js playback-resolver.js source-selection.js search-broker.js stream-utils.js spotify-service.js audio-settings.js library-import.js; do
   cp "$root/$file" "$app/Contents/Resources/backend/"
 done
 cp "$root/macos/native-host.js" "$root/macos/legacy-shelf.js" "$root/macos/secure-store.js" "$root/macos/discord-presence.js" "$root/macos/lyrics-service.js" "$root/macos/shelf-sync.js" "$root/macos/mobile-companion.js" "$root/macos/offline-downloads.js" "$app/Contents/Resources/backend/macos/"

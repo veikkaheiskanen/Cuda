@@ -37,6 +37,7 @@ struct RootView: View {
             #if DEBUG
             if ProcessInfo.processInfo.environment["CUDA_DEMO"] == "1" {
                 store.seedPreview()
+                if ProcessInfo.processInfo.environment["CUDA_PREVIEW_SETTINGS"] == "1" { page = .settings }
                 if ProcessInfo.processInfo.environment["CUDA_PREVIEW_PLAYER"] == "1", let track = store.state.history.first {
                     player.play(track, in: store.state.history)
                     expanded = true
@@ -141,9 +142,11 @@ struct HomeView: View {
                         ForEach(Array(store.state.history.prefix(4)), id: \.key) { TrackRow(track: $0, store: store, player: player, queue: store.state.history) }
                     }
                 }
-                if !store.recommendations.isEmpty {
+                if !store.state.history.isEmpty || !store.recommendations.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        HStack { Text("For you").font(.title2.bold()); Spacer(); if store.refreshing { ProgressView() } else { Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.refreshRecommendations() } }.labelStyle(.iconOnly).frame(width: 44, height: 44) } }
+                        GenreSelector(genres: store.listenedGenres, selection: store.mood, refreshing: store.refreshing, select: store.selectGenre, refresh: { Task { await store.refreshRecommendations() } })
+                        if store.listenedGenres.isEmpty { Text("Genres appear as Cuda learns from your listening history. Pair your Mac to discover genres across services.").font(.subheadline).foregroundStyle(.secondary) }
+                        if store.recommendations.isEmpty && !store.refreshing { Text("No new recommendations yet. Try another genre or enable more services in Settings.").foregroundStyle(.secondary) }
                         ScrollView(.horizontal) {
                             LazyHStack(alignment: .top, spacing: 16) {
                                 ForEach(store.recommendations, id: \.key) { track in
@@ -158,7 +161,10 @@ struct HomeView: View {
                 if !store.state.playlists.isEmpty { PlaylistShelf(store: store, player: player) }
             }.padding(20)
         }.navigationTitle("Cuda").refreshable { await store.refreshRecommendations() }
-            .task { if store.recommendations.isEmpty { await store.refreshRecommendations() } }
+            .task(id: store.state.history.map(\.key)) {
+                guard ProcessInfo.processInfo.environment["CUDA_DEMO"] != "1" else { return }
+                do { try await Task.sleep(for: .milliseconds(500)); try Task.checkCancellation(); await store.refreshRecommendations() } catch {}
+            }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in if case .success(let urls) = result { Task { await store.importAudio(urls) } } }
     }
 }
@@ -339,7 +345,7 @@ struct MiniPlayer: View {
                 else { Image(systemName: player.playing ? "pause.fill" : "play.fill").font(.title3).frame(width: 44, height: 44) }
             }.accessibilityLabel(player.playing ? "Pause" : "Play").accessibilityIdentifier("mini-play")
             Button { player.next() } label: { Image(systemName: "forward.end.fill").frame(width: 44, height: 44) }.accessibilityLabel("Next song")
-            Menu { ForEach(Source.allCases) { source in Button(source.label) { player.changeSource(source) } } } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }
+            Menu { ForEach(player.availableSources) { source in Button(source.label) { player.changeSource(source) } } } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }
                 .accessibilityLabel("Audio source, \(player.source.label)").disabled(player.current?.platform == "local")
         }.padding(10).modifier(PlayerMaterial())
     }
@@ -400,7 +406,7 @@ struct NowPlaying: View {
                 Spacer(minLength: 0)
                 if !player.usesSpotify { Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").foregroundStyle(player.repeatOne ? Color.accentColor : Color.secondary).frame(width: 44, height: 44) }.accessibilityLabel("Repeat song") }
             }.buttonStyle(.plain)
-            HStack { Text(player.offlinePlaying ? "On this device" : player.current?.sourceName ?? "").font(.subheadline).foregroundStyle(.secondary); Spacer(); Menu { ForEach(Source.allCases) { source in Button(source.label) { player.changeSource(source) } } } label: { Label(player.source.label, systemImage: "chevron.down").font(.subheadline).frame(minHeight: 44) }.disabled(player.current?.platform == "local") }
+            HStack { Text(player.offlinePlaying ? "On this device" : player.current?.sourceName ?? "").font(.subheadline).foregroundStyle(.secondary); Spacer(); Menu { ForEach(player.availableSources) { source in Button(source.label) { player.changeSource(source) } } } label: { Label(player.source.label, systemImage: "chevron.down").font(.subheadline).frame(minHeight: 44) }.disabled(player.current?.platform == "local") }
             Button("Audio", systemImage: "slider.horizontal.3") { audioSettings = true }.frame(minHeight: 44).accessibilityIdentifier("audio-settings")
             HStack(spacing: 16) { Image(systemName: "speaker.fill").foregroundStyle(.secondary); SystemVolume().frame(height: 32); AirPlay().frame(width: 44, height: 44) }
         }

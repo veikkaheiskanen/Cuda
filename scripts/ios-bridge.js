@@ -7,7 +7,7 @@ const path = require('node:path');
 const os = require('node:os');
 
 const routes = new Map([
-  ['/api/search', 'GET'], ['/api/playback-source', 'POST'], ['/api/resolve-source', 'GET'],
+  ['/api/search', 'GET'], ['/api/vibe','POST'], ['/api/playback-source', 'POST'], ['/api/resolve-source', 'GET'],
   ['/api/stream-info', 'GET'], ['/api/audio-proxy', 'GET'], ['/api/local-track', 'GET'], ['/api/library-file', 'GET'], ['/api/local-thumbnail', 'GET'],
 ]);
 function authenticated(req, token) {

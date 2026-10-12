@@ -7,6 +7,9 @@ final class Store: ObservableObject {
     @Published var state = CollectionState()
     @Published var results: [Track] = []
     @Published var recommendations: [Track] = []
+    @Published var listenedGenres: [String] = []
+    private var recommendationPending = false
+    private var recommendationRevision = UUID()
     @Published var spotify = SpotifyStatus()
     @Published var choices: [SpotifyChoice] = []
     @Published var searching = false
@@ -36,6 +39,7 @@ final class Store: ObservableObject {
     private var likeTask: Task<Void, Never>?
     private var file: URL { runtime.directory.appendingPathComponent("native-shelf.json") }
     init() {
+        StreamingPreferences.shared.changed = { [weak self] values in self?.servicesChanged(values) }
         if let data = try? Data(contentsOf: offlineFile), let saved = try? JSONDecoder().decode(OfflinePlaylistState.self, from: data) { offline = saved }
         if let data = try? Data(contentsOf: file), let value = try? JSONDecoder().decode(CollectionState.self, from: data) { state = value }
         runtime.event = { [weak self] event in self?.receive(event) }
@@ -51,7 +55,7 @@ final class Store: ObservableObject {
             ready = true
             discord.start()
             deviceSync.start()
-            recommendations = Array(Track.unique(spotify.tracks + state.favourites + state.local).prefix(20))
+            if ProcessInfo.processInfo.environment["CUDA_NATIVE_DEMO"] != "1" { await refresh() }
         } catch { message = error.localizedDescription }
     }
     private func receive(_ event: [String: Any]) {
@@ -75,25 +79,44 @@ final class Store: ObservableObject {
         } catch is CancellationError { if token == queryToken { searching = false } }
         catch { if token == queryToken { searching = false; message = error.localizedDescription } }
     }
+    func selectGenre(_ genre: String) {
+        guard genre == "all" || listenedGenres.contains(genre), genre != mood else { return }
+        mood = genre; recommendationRevision = UUID(); recommendations = []
+        Task { await refresh() }
+    }
     func refresh() async {
-        guard ready, !refreshing else { return }; refreshing = true; defer { refreshing = false }
+        guard ready else { return }; if refreshing { recommendationPending = true; return }; refreshing = true; defer { refreshing = false; if recommendationPending { recommendationPending = false; Task { await refresh() } } }
+        let revision = recommendationRevision, selected = mood
         do {
-            let taste = Track.unique(state.favourites + state.playlists.flatMap(\.tracks) + state.history + spotify.tracks)
-            let favourites = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Array(taste.prefix(100))))
-            let response: SearchResponse = try await runtime.api("/api/vibe", body: ["favorites": favourites, "genre": mood, "limit": 20])
-            recommendations = response.tracks ?? []
-        } catch { notice = "Recommendations are unavailable right now. Your Shelf is still ready to play." }
+            func object(_ tracks: [Track]) throws -> Any { try JSONSerialization.jsonObject(with: JSONEncoder().encode(Array(tracks.prefix(100)))) }
+            let response: RecommendationResponse = try await runtime.api("/api/vibe", body: ["history": try object(state.history), "favorites": try object(state.favourites), "playlists": try object(state.playlists.flatMap(\.tracks)), "genre": selected, "seen": recommendations.map(\.key), "services": StreamingPreferences.shared.enabled, "limit": 20])
+            guard revision == recommendationRevision else { return }
+            listenedGenres = response.genres ?? []; mood = response.genre ?? "all"
+            recommendations = (response.tracks ?? []).filter { StreamingPreferences.shared.allows($0.platform) }
+            for track in response.learned ?? [] { if let index = state.history.firstIndex(where: { $0.key == track.key }) { state.history[index].genres = track.genres } }
+            save()
+        } catch { if revision == recommendationRevision { notice = "Recommendations are unavailable right now. Your Shelf is still ready to play." } }
+    }
+    private func servicesChanged(_ values: [String]) {
+        recommendationRevision = UUID()
+        results = []; recommendations = []
+        player.objectWillChange.send()
+        if player.source != .auto && !values.contains(player.source.rawValue) { player.source = .auto }
+        if let current = player.current, current.platform != "local", !player.offlinePlaying, !values.contains(current.platform) { player.stop() }
+        queryToken = UUID().uuidString; searching = false
+        guard ready else { return }
+        Task { do { _ = try await runtime.call("servicesConfigure", ["services": values]); await refresh() } catch { notice = "Service choices could not be applied. Reopen Cuda to retry." } }
     }
     func save() { do { try JSONEncoder().encode(state.saved()).write(to: file, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path); deviceSync.changed() } catch { message = "Cuda could not save your Shelf. Check free disk space." } }
     func played(_ track: Track) {
         guard state.history.first?.sameRecording(track) != true else { return }
         state.history.removeAll { $0.sameRecording(track) }; state.history.insert(track, at: 0); state.history = Array(state.history.prefix(200)); deviceSync.played(track); save()
-        if track.platform == "spotify" { Task { try? await runtime.spotifyVoid("played", [try JSONSerialization.jsonObject(with: JSONEncoder().encode(track))]) } }
+        if track.platform == "spotify", StreamingPreferences.shared.allows("spotify") { Task { try? await runtime.spotifyVoid("played", [try JSONSerialization.jsonObject(with: JSONEncoder().encode(track))]) } }
     }
     func favourite(_ track: Track) {
         let liked = !state.favourites.contains { $0.sameRecording(track) }
         if liked { state.favourites.insert(track, at: 0) } else { state.favourites.removeAll { $0.sameRecording(track) } }; save()
-        if track.platform == "spotify", spotify.connected {
+        if track.platform == "spotify", spotify.connected, StreamingPreferences.shared.allows("spotify") {
             let previous = likeTask
             likeTask = Task { await previous?.value; do { try await runtime.spotifyVoid("like", ["spotify:track:" + track.id, liked]) } catch { notice = "Saved on Shelf. Spotify couldn’t sync this favourite; reconnect your account to retry." } }
         }
@@ -213,6 +236,6 @@ final class Store: ObservableObject {
         }
         state.local = [tracks[0]]; state.history = tracks; state.favourites = [tracks[1],tracks[2]]
         state.playlists = [Playlist(name: "Evening rotation", description: "For the way home", tracks: [tracks[0],tracks[1]]),Playlist(name: "A little quieter", description: "Room to breathe",tracks:[tracks[2],tracks[3]])]
-        recommendations = tracks; save()
+        recommendations = tracks; listenedGenres = ["ambient", "electronic"]; save()
     }
 }

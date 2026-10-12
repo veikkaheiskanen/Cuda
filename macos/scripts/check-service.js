@@ -37,6 +37,14 @@ function rpc(method,args){return new Promise((resolve,reject)=>{const key=++id;p
  const mobileURL=`http://127.0.0.1:${companion.port}/api/library-file?id=${tracks[0].id}&pair=${companion.token}`;
  const mobileAudio=await fetch(mobileURL,{headers:{Range:'bytes=0-15'}});if(mobileAudio.status!==206||(await mobileAudio.arrayBuffer()).byteLength!==16)throw Error('Packaged automatic companion range playback failed');
  if((await fetch(`http://127.0.0.1:${companion.port}/api/library`,{headers:{Authorization:'Bearer '+companion.token}})).status!==404)throw Error('Companion exposed desktop operations');
+
+ await rpc('servicesConfigure',{services:[]});
+ await rpc('api',{path:'/api/search?q=fixture&platform=auto'}).then(()=>{throw Error('All-disabled search was accepted');},error=>{if(!/sources|services/.test(error.message))throw error;});
+ await rpc('api',{path:'/api/stream-info?id=fixture&platform=youtube&url=https%3A%2F%2Fyoutube.com%2Fwatch%3Fv%3Dfixture'}).then(()=>{throw Error('Disabled stream was accepted');},error=>{if(!/turned off/.test(error.message))throw error;});
+ await rpc('spotify',{operation:'search',values:['fixture']}).then(()=>{throw Error('Disabled Spotify request was accepted');},error=>{if(!/turned off/.test(error.message))throw error;});
+ const retained=await rpc('api',{path:'/api/library'});if(!retained.length)throw Error('Opt-out erased local audio');
+ await rpc('servicesConfigure',{services:['spotify','youtube','ytmusic','soundcloud']});
+ console.log('PASS: streaming opt-outs gate catalog and audio requests while imported music remains available');
  await rpc('syncConfigure',{enabled:false});
  console.log('PASS: packaged TLS pairing, two-way Shelf envelope, verified offline-song download and automatically paired streaming companion');
  const stream=await rpc('api',{path:'/api/stream-info?id='+tracks[0].id+'&platform=local&url='});const url=stream.streamUrl;

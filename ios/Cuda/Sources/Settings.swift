@@ -16,6 +16,7 @@ struct SettingsView: View {
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
             }
+            StreamingSettings()
             Section {
                 TextField("Spotify Client ID", text: $clientID).textInputAutocapitalization(.never).autocorrectionDisabled()
                 if let shared = spotify.macAccount {
@@ -47,9 +48,10 @@ struct SettingsView: View {
                 }
             }
             CompanionSettings(sync: store.deviceSync)
+            UpdateSettings()
             Section("About") {
                 Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                LabeledContent("Cuda for iOS", value: "1.1.3")
+                LabeledContent("Cuda for iOS", value: "1.1.4")
                 Link("Source & setup", destination: URL(string: "https://github.com/veikkaheiskanen/Cuda/tree/main/ios")!)
                 Text("powered on:").foregroundStyle(.secondary)
                 Link("Riff by rootless", destination: URL(string: "https://github.com/rootscripts/riff")!)

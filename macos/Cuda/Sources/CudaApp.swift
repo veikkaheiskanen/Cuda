@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var player: Player?
     private var keyboardMonitor: Any?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppUpdates.shared.start()
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.charactersIgnoringModifiers == " ", event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty, !(NSApp.keyWindow?.firstResponder is NSTextView) {
                 Self.player?.toggle(); return nil
@@ -38,7 +39,7 @@ struct CudaCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     var body: some Commands {
         CommandGroup(replacing: .newItem) { Button("Import Music…") { store.importAudio() }.keyboardShortcut("o"); Button("Open Cuda Window") { openWindow(id: "main") }.keyboardShortcut("n") }
-        CommandGroup(after: .appInfo) { Button("Cuda Source & Help") { NSWorkspace.shared.open(URL(string: "https://github.com/veikkaheiskanen/Cuda")!) } }
+        CommandGroup(after: .appInfo) { MacUpdateMenu(); Button("Cuda Source & Help") { NSWorkspace.shared.open(URL(string: "https://github.com/veikkaheiskanen/Cuda")!) } }
         CommandMenu("Playback") {
             Button("Play / Pause") { store.player.toggle() }
             Button("Next Song") { store.player.next() }.keyboardShortcut(.rightArrow)
@@ -69,3 +70,8 @@ enum NativeCapture {
     }
 }
 #endif
+
+struct MacUpdateMenu: View {
+    @ObservedObject private var updates = AppUpdates.shared
+    var body: some View { Button("Check for Updates…") { updates.check() }.disabled(!updates.canCheck) }
+}

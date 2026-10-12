@@ -1,0 +1,11 @@
+# Listening-based discovery
+
+Home → For you learns from Last played across paired devices. Recent songs carry more weight than older listening; favourites and playlist songs provide weaker additional signals. The genre menu contains genres verified for songs in listening history, not a fixed mood list. All music mixes the listener's tastes. Selecting a genre narrows the artist seeds and filters recommendations to known genre matches. Unknown metadata remains unclassified.
+
+Genre discovery caches exact recording credits and genres from MusicBrainz, with an exact song/artist iTunes catalog fallback. Requests are rate-limited and cached; neither source supplies playback or preview audio. An unpaired iPhone can use exact iTunes metadata with its own Spotify catalog. Empty history has no invented genre profile.
+
+Ranking favors related artists and genres, unseen songs and official recordings. The twelve most recent songs are excluded, alternate providers for the same recording are deduplicated, normal song listeners are not recommended very long DJ mixes, and at most two songs by one artist appear in a refresh. Refresh deprioritizes the previous selection. Recommendations are rules-based; no account data is sent to an AI model.
+
+Settings → Streaming services controls Spotify, YouTube, YouTube Music, SoundCloud and Audius per device. Opt-outs exclude providers from catalog search, recommendations, playback resolution and automatic fallbacks. Disabling the active online source stops that playback. Saved collections and setup are retained; imported and already downloaded audio remains usable. A paired phone can narrow the services available on its Mac, but cannot re-enable one the Mac has disabled. These provider choices do not sync between devices.
+
+Audius is off by default. Enabling it adds public catalog search and supported full-stream playback on Mac and through the paired Mac companion on iOS. Gated, unavailable, private, deleted and restricted tracks are excluded. Offline download is available only when the artist has enabled ungated downloads. No Audius sign-in or API key is needed for the public catalog. Downloaded playlists stay on the device that requested them.

@@ -210,14 +210,18 @@ struct HomeView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack { Text("For you").font(.title2.bold()); Spacer(); Menu(store.mood == "all" ? "All music" : store.mood.capitalized) { ForEach(["all", "relax", "workout", "electronic", "rock", "jazz"], id: \.self) { genre in Button(genre == "all" ? "All music" : genre.capitalized) { store.mood = genre; Task { await store.refresh() } } } }.fixedSize(); if store.refreshing { ProgressView().controlSize(.small) } else { Button { Task { await store.refresh() } } label: { Label("Refresh recommendations", systemImage: "arrow.clockwise") }.labelStyle(.iconOnly).buttonStyle(.glass) } }
-                    if store.recommendations.isEmpty { Text("Favourites and playlists help Cuda find music for you.").foregroundStyle(.secondary) }
+                    GenreSelector(genres: store.listenedGenres, selection: store.mood, refreshing: store.refreshing, select: store.selectGenre, refresh: { Task { await store.refresh() } })
+                    if store.listenedGenres.isEmpty { Text("Genres appear as Cuda learns from your listening history.").font(.callout).foregroundStyle(.secondary) }
+                    if store.recommendations.isEmpty { Text("Play music to shape your recommendations. Favourites and playlists help too.").foregroundStyle(.secondary) }
                     else { SongShelf(tracks: store.recommendations, store: store, player: player) }
                 }
-                if store.spotify.connected && store.spotify.playbackConnected { Menu("Spotify radio", systemImage: "dot.radiowaves.left.and.right") { ForEach(["pop", "rock", "electronic", "jazz", "classical", "hip hop"], id: \.self) { genre in Button(genre.capitalized) { Task { await store.genreRadio(genre) } } } }.fixedSize() }
-                if store.spotify.connected { WeeklyShelf(store: store, player: player) }
+                if StreamingPreferences.shared.allows("spotify") && store.spotify.connected && store.spotify.playbackConnected && !store.listenedGenres.isEmpty { Menu("Spotify radio", systemImage: "dot.radiowaves.left.and.right") { ForEach(store.listenedGenres, id: \.self) { genre in Button(genre.capitalized) { Task { await store.genreRadio(genre) } } } }.fixedSize() }
+                if StreamingPreferences.shared.allows("spotify") && store.spotify.connected { WeeklyShelf(store: store, player: player) }
                 if !store.state.playlists.isEmpty { PlaylistShelf(store: store, open: playlist) }
             }.padding(28).frame(maxWidth: 1300, alignment: .leading).frame(maxWidth: .infinity)
+        }.task(id: store.state.history.map(\.key)) {
+            guard ProcessInfo.processInfo.environment["CUDA_NATIVE_DEMO"] != "1" else { return }
+            do { try await Task.sleep(for: .milliseconds(500)); try Task.checkCancellation(); await store.refresh() } catch {}
         }
     }
 }
@@ -372,7 +376,7 @@ struct CompactPlayer: View {
 struct SourceMenu: View {
     @ObservedObject var player: Player
     var iconOnly = false
-    var body: some View { if player.current?.platform != "local" { Menu { ForEach(Source.allCases) { source in Button { player.changeSource(source) } label: { if source == player.source { Label(source.label, systemImage: "checkmark") } else { Text(source.label) } } } } label: { if iconOnly { Image(systemName: "chevron.down") } else { Text(player.source.label) } }.menuStyle(.borderlessButton).menuIndicator(iconOnly ? .hidden : .visible).fixedSize().accessibilityLabel("Audio source, \(player.source.label)") } }
+    var body: some View { if player.current?.platform != "local" { Menu { ForEach(player.availableSources) { source in Button { player.changeSource(source) } label: { if source == player.source { Label(source.label, systemImage: "checkmark") } else { Text(source.label) } } } } label: { if iconOnly { Image(systemName: "chevron.down") } else { Text(player.source.label) } }.menuStyle(.borderlessButton).menuIndicator(iconOnly ? .hidden : .visible).fixedSize().accessibilityLabel("Audio source, \(player.source.label)") } }
 }
 struct Transport: View {
     @ObservedObject var player: Player

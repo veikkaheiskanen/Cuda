@@ -20,6 +20,7 @@ final class Player: ObservableObject {
     @Published private(set) var sleepDeadline: Date?
     private let equalizer = EqualizerProcessor()
     private var sleepTask: Task<Void, Never>?
+    var availableSources: [Source] { Source.allCases.filter { $0 == .auto || StreamingPreferences.shared.allows($0.rawValue) } }
     @Published var source: Source = .auto
     @Published var queue: [Track] = []
     @Published var shuffle = false
@@ -129,7 +130,8 @@ final class Player: ObservableObject {
             do {
                 let cached = source == .auto ? offlineURL?(track) : nil
                 offlinePlaying = cached != nil
-                if cached == nil && (source == .spotify || (track.platform == "spotify" && source == .auto && !excluded.contains(track.key))) {
+                if source != .auto && !StreamingPreferences.shared.allows(source.rawValue) { throw CudaError.message("This streaming service is turned off in Settings.") }
+                if cached == nil && StreamingPreferences.shared.allows("spotify") && (source == .spotify || (track.platform == "spotify" && source == .auto && !excluded.contains(track.key))) {
                     var selected = track
                     if track.platform != "spotify" {
                         let candidates = try await spotify.search(track.artist + " " + track.title)

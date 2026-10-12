@@ -9,10 +9,11 @@ struct Track: Codable, Identifiable, Equatable, Hashable {
     var duration: Double?
     var thumbnail: String?
     var localFile: String?
+    var genres: [String]?
     var alternatives: [Track]?
     var albumId: String?
     var album: String?
-    enum CodingKeys: String, CodingKey { case id,title,artist,platform,url,duration,thumbnail,localFile,alternatives,albumId,album }
+    enum CodingKeys: String, CodingKey { case id,title,artist,platform,url,duration,thumbnail,localFile,alternatives,albumId,album,genres }
     init(id: String, title: String, artist: String, platform: String, url: String = "", duration: Double? = nil, thumbnail: String? = nil, localFile: String? = nil, alternatives: [Track]? = nil) {
         self.id=id;self.title=title;self.artist=artist;self.platform=platform;self.url=url;self.duration=duration;self.thumbnail=thumbnail;self.localFile=localFile;self.alternatives=alternatives
     }
@@ -20,12 +21,13 @@ struct Track: Codable, Identifiable, Equatable, Hashable {
         let c=try decoder.container(keyedBy: CodingKeys.self)
         id=try c.decode(String.self,forKey:.id);title=try c.decodeIfPresent(String.self,forKey:.title) ?? "Untitled";artist=try c.decodeIfPresent(String.self,forKey:.artist) ?? "Unknown artist"
         platform=try c.decodeIfPresent(String.self,forKey:.platform) ?? "youtube";url=try c.decodeIfPresent(String.self,forKey:.url) ?? ""
+        genres=try? c.decodeIfPresent([String].self,forKey:.genres)
         duration=try? c.decodeIfPresent(Double.self,forKey:.duration);thumbnail=try? c.decodeIfPresent(String.self,forKey:.thumbnail);localFile=try? c.decodeIfPresent(String.self,forKey:.localFile);alternatives=try? c.decodeIfPresent([Track].self,forKey:.alternatives);albumId=try? c.decodeIfPresent(String.self,forKey:.albumId);album=try? c.decodeIfPresent(String.self,forKey:.album)
     }
     var key: String { platform + ":" + id }
     var sourceName: String {
         switch platform { case "local": return "On this device"; case "spotify": return "Spotify"
-        case "ytmusic": return "YouTube Music"; case "soundcloud": return "SoundCloud"; default: return "YouTube" }
+        case "audius": return "Audius"; case "ytmusic": return "YouTube Music"; case "soundcloud": return "SoundCloud"; default: return "YouTube" }
     }
     func sameRecording(_ other: Track?) -> Bool {
         guard let other else { return false }
@@ -77,11 +79,11 @@ enum CudaError: LocalizedError {
     var errorDescription: String? { if case .message(let text) = self { return text }; return nil }
 }
 enum Source: String, CaseIterable, Identifiable {
-    case auto, spotify, youtube, ytmusic, soundcloud
+    case auto, spotify, youtube, ytmusic, soundcloud, audius
     var id: String { rawValue }
     var label: String {
         switch self { case .auto: return "Auto"; case .spotify: return "Spotify"; case .youtube: return "YouTube"
-        case .ytmusic: return "YouTube Music"; case .soundcloud: return "SoundCloud" }
+        case .ytmusic: return "YouTube Music"; case .soundcloud: return "SoundCloud"; case .audius: return "Audius" }
     }
 }
 struct SearchResponse: Decodable { var tracks: [Track]?; var error: String? }

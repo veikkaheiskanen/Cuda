@@ -10,6 +10,7 @@ final class Player: ObservableObject {
     @Published var loading = false
     @Published var position = 0.0
     @Published var duration = 0.0
+    var availableSources: [Source] { Source.allCases.filter { $0 == .auto || StreamingPreferences.shared.allows($0.rawValue) } }
     @Published var source: Source = .auto
     @Published var volume: Float = 0.85 { didSet { applyEffects() } }
     @Published var effects = Effects() { didSet { applyEffects() } }
@@ -66,6 +67,7 @@ final class Player: ObservableObject {
                 local.seek(pendingPosition, play: wantsPlay); local.apply(effects, volume: volume)
                 loading = false; playing = wantsPlay; didPlay?(track); updateNowPlaying(); return
             }
+            if source != .auto && !StreamingPreferences.shared.allows(source.rawValue) { throw CudaError.message("This streaming service is turned off in Settings.") }
             let selected: Track
             var stream: StreamInfo?
             if track.platform == "local" { selected = track }

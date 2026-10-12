@@ -37,7 +37,7 @@ final class Runtime: ObservableObject {
         child.terminationHandler = { [weak self] _ in Task { @MainActor in self?.stopped() } }
         let key = try NativeKey.key(ephemeral: ProcessInfo.processInfo.environment["CUDA_NATIVE_PROFILE"] != nil)
         try child.run(); process = child
-        let data = try await call("init", ["key": key.base64EncodedString()])
+        let data = try await call("init", ["key": key.base64EncodedString(), "services": StreamingPreferences.shared.enabled])
         let value = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         port = value?["port"] as? Int ?? 0; ready = port > 0
         guard ready else { throw CudaError.message("The music service could not start. Reopen Cuda.") }

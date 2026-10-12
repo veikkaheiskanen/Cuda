@@ -40,8 +40,8 @@ jobs:
           mkdir -p build/export/Payload
           cp -R build/device/Build/Products/Release-iphoneos/Cuda.app build/export/Payload/
           cd build/export
-          /usr/bin/ditto -c -k --keepParent Payload Cuda-1.1.3-ios-unsigned.ipa
-          shasum -a 256 Cuda-1.1.3-ios-unsigned.ipa > SHA256SUMS.txt
+          /usr/bin/ditto -c -k --keepParent Payload Cuda-1.1.4-ios-unsigned.ipa
+          shasum -a 256 Cuda-1.1.4-ios-unsigned.ipa > SHA256SUMS.txt
       - name: Start isolated Mac sync fixture
         run: |
           node ios/scripts/sync-fixture.js > ios/build/sync-fixture.log 2>&1 &
