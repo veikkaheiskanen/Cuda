@@ -152,8 +152,19 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         connectionWatchdog?.cancel(); connecting = false; connected = true; message = "Connected to Spotify on this device."
         appRemote.playerAPI?.delegate = self
         appRemote.playerAPI?.subscribe(toPlayerState: report)
-        // AuthorizeAndPlay already started its song; don't restart it on connection.
-        if let uri = pendingURI, uri != wakeURI { appRemote.playerAPI?.play(uri, callback: report) }
+        // Spotify may keep an already playing song during authorization. Check
+        // its actual state before deciding whether the selected song needs play.
+        if let uri = pendingURI {
+            let id = requestID
+            appRemote.playerAPI?.getPlayerState { [weak self] value, error in
+                Task { @MainActor in
+                    guard let self, self.requestID == id, self.pendingURI == uri, self.remote === appRemote, self.connected else { return }
+                    if let error { self.recover(error); return }
+                    if let state = value as? SPTAppRemotePlayerState, state.track.uri == uri, !state.isPaused { self.receive(state) }
+                    else { appRemote.playerAPI?.play(uri, callback: self.report) }
+                }
+            }
+        }
         wakeURI = nil
         if pendingURI != nil {
             let id = requestID
