@@ -49,7 +49,8 @@ function rankRecommendations(candidates, profile, history, genre = 'all', limit 
 }
 // Public genre metadata, exact recording credits to avoid same-name artists.
 // One serialized request per second and a bounded persistent cache.
-function createGenreLookup({directory, fetcher = fetch, now = Date.now, pause = ms => new Promise(r => setTimeout(r,ms))} = {}) {
+function createGenreLookup({directory, country = 'US', fetcher = fetch, now = Date.now, pause = ms => new Promise(r => setTimeout(r,ms))} = {}) {
+  country = /^[A-Z]{2}$/.test(country) ? country : 'US';
   const file = directory && path.join(directory, 'listened-genres.json');
   let cache = {}, tail = Promise.resolve(), last = 0, catalogTail = Promise.resolve(), catalogLast = 0;
   try { cache = JSON.parse(fs.readFileSync(file)); } catch {}
@@ -64,7 +65,7 @@ function createGenreLookup({directory, fetcher = fetch, now = Date.now, pause = 
   function catalogGenre(track) {
     const job = catalogTail.then(async () => {
       await pause(Math.max(0, 3100 - (now()-catalogLast))); catalogLast=now();
-      const response = await fetcher('https://itunes.apple.com/search?'+new URLSearchParams({term:track.artist+' '+track.title,entity:'song',limit:'5'}), {signal:AbortSignal.timeout(5000)});
+      const response = await fetcher('https://itunes.apple.com/search?'+new URLSearchParams({term:track.artist+' '+track.title,entity:'song',limit:'5',country}), {signal:AbortSignal.timeout(5000)});
       if (!response.ok) return [];
       const result = await response.json();
       const title = normalize(track.title).replace(artistKey(track)+' ','');
@@ -74,7 +75,7 @@ function createGenreLookup({directory, fetcher = fetch, now = Date.now, pause = 
   }
   return async function enrich(track) {
     if (genresOf(track).length || !artistKey(track) || /^unknown/.test(artistKey(track))) return track;
-    const key = normalize(track.artist)+'|'+normalize(track.title);
+    const key = normalize(track.artist)+'|'+normalize(track.title)+'|'+country;
     const saved = cache[key];
     if (saved && saved.expires > now()) return {...track, genres:saved.genres};
     try {

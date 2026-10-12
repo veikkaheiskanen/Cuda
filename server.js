@@ -323,7 +323,7 @@ async function searchSoundcloud(query, limit = 14) {
   }
 }
 
-const genreLookup = require('./recommendations').createGenreLookup({directory: DATA_DIR});
+const genreLookup = require('./recommendations').createGenreLookup({directory: DATA_DIR, country: process.env.CUDA_NATIVE_MARKET || 'US'});
 function directYoutubeSearch(query, filterSpam = false) {
   return new Promise((resolve) => {
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;

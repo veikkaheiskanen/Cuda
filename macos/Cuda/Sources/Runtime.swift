@@ -24,6 +24,7 @@ final class Runtime: ObservableObject {
         child.arguments = [resources.appendingPathComponent("backend/macos/native-host.js").path]
         var environment = ProcessInfo.processInfo.environment
         environment["RIFF_DATA_DIR"] = directory.path
+        environment["CUDA_NATIVE_MARKET"] = Locale.current.region?.identifier ?? "US"
         for name in ["yt-dlp", "ffmpeg", "ffprobe", "riff-spotify-player"] {
             environment["RIFF_" + name.filter { $0.isLetter || $0.isNumber }.uppercased()] = resources.appendingPathComponent("tools/bin/" + name).path
         }

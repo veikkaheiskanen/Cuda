@@ -83,7 +83,7 @@ struct SettingsView: View {
                 UpdateSettings()
                 Section("About") {
                     Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.9")
+                    LabeledContent("Cuda Native", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.10")
                     Button("About Cuda") { about = true }
                 }
             }.formStyle(.grouped).scrollContentBackground(.hidden)

@@ -2,7 +2,7 @@
 
 Home → For you learns from Last played across paired devices. Recent songs carry more weight than older listening; favourites and playlist songs provide weaker additional signals. The genre menu contains genres verified for songs in listening history, not a fixed mood list. All music mixes the listener's tastes. Selecting a genre narrows the artist seeds and filters recommendations to known genre matches. Unknown metadata remains unclassified.
 
-Genre discovery caches exact recording credits and genres from MusicBrainz, with an exact song/artist iTunes catalog fallback. Requests are rate-limited and cached; neither source supplies playback or preview audio. An unpaired iPhone can use exact iTunes metadata with its own Spotify catalog. Empty history has no invented genre profile.
+Genre discovery caches exact recording credits and genres from MusicBrainz, with an exact song/artist iTunes catalog fallback in the device’s region. Requests are rate-limited and cached; neither source supplies playback or preview audio. An unpaired iPhone can use exact iTunes metadata with its own Spotify catalog. Empty history has no invented genre profile.
 
 Ranking favors related artists and genres, unseen songs and official recordings. The twelve most recent songs are excluded, alternate providers for the same recording are deduplicated, normal song listeners are not recommended very long DJ mixes, and at most two songs by one artist appear in a refresh. Refresh deprioritizes the previous selection. Recommendations are rules-based; no account data is sent to an AI model.
 

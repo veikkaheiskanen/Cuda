@@ -47,3 +47,8 @@ test('refresh rotation preserves artist caps and suppresses very long mixes for 
  const result=rankRecommendations([track('old','A'),track('new','A'),track('new2','A'),long],p,history,'all',20,['youtube:old']);
  assert.deepEqual(result.map(t=>t.id),['new','new2']);
 });
+test('regional catalogue fallback finds local releases using the configured device market',async()=>{
+ let market;
+ const lookup=createGenreLookup({country:'FI',pause:async()=>{},fetcher:async url=>{const u=new URL(url);if(u.hostname==='itunes.apple.com')market=u.searchParams.get('country');return{ok:true,json:async()=>u.hostname==='itunes.apple.com'?{results:[{trackName:'Toivottavasti',artistName:'Ares',primaryGenreName:'Hip-Hop/Rap'}]}:{recordings:[]}};}});
+ assert.deepEqual((await lookup(track('region','Ares',[],'Toivottavasti'))).genres,['hip hop']);assert.equal(market,'FI');
+});
