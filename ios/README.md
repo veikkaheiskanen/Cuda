@@ -28,7 +28,7 @@ Alternatively, install full Xcode and build the project on your Mac. Set your ow
 ## Spotify setup
 
 1. Install Spotify on your iPhone/iPad and sign in.
-2. In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), register an iOS integration with bundle ID `com.veikkaheiskanen.Cuda` and redirect URI **`cuda-spotify://callback`**. Allow the account under your app's user access if using development mode.
+2. In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), register an iOS integration with the **installed bundle ID shown in Cuda Settings → Spotify setup** (normally `com.veikkaheiskanen.Cuda`; a sideloading tool may change it) and redirect URI **`cuda-spotify://callback`**. Allow the account under your app's user access if using development mode.
 3. In Cuda → Settings, enter your app Client ID and tap **Connect Spotify**. This opens Spotify and returns to Cuda for remote control.
 4. Tap **Choose playlists** and **Sync** to fetch the playlists you want to use on Shelf and for recommendations. Spotify may limit which playlists your developer app can access.
 

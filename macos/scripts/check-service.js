@@ -24,7 +24,7 @@ function rpc(method,args){return new Promise((resolve,reject)=>{const key=++id;p
  if((await fetch(`http://127.0.0.1:${init.port}/api/library`)).status!==401)throw Error('Loopback library has no access control');
  if((await fetch(`http://127.0.0.1:${init.port}/api/library?native_token=${encodeURIComponent('é'.repeat(64))}`)).status!==401)throw Error('Invalid capability was accepted');
  const syncOff=await rpc('syncStatus',{});if(syncOff.enabled)throw Error('Sync listener started without opt-in');
- const metadata=await rpc('syncExchange',{records:[{key:'p:fixture',clock:Date.now(),device:'fixture-phone',deleted:false,playlist:{id:'fixture',name:'Fixture rotation',description:'Original fixture',tracks}}]});
+ const metadata=await rpc('syncExchange',{history:true,records:[{key:'p:fixture',clock:Date.now(),device:'fixture-phone',deleted:false,playlist:{id:'fixture',name:'Fixture rotation',description:'Original fixture',tracks}}]});
  if(metadata.records.length!==1||metadata.assets.length!==1||metadata.assets.some(a=>a.hash===privateDownload.hash))throw Error('Playlist download entered automatic Shelf sync');
  if(!fs.existsSync(path.join(app,'Assets.car')))throw Error('Native system icon appearances are missing');
  const sync=await rpc('syncConfigure',{enabled:true});if(!sync.enabled||sync.fingerprint.length!==64)throw Error('Packaged TLS sync setup failed');

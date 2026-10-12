@@ -56,11 +56,13 @@ struct SyncConnection {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { throw CudaError.message((response as? HTTPURLResponse)?.statusCode == 401 ? "Pairing was reset. Pair your Mac again." : "Open Cuda on your Mac and connect to the same Wi-Fi.") }
     }
     func exchange(_ records: [ShelfSyncRecord]) async throws -> ShelfSyncEnvelope {
-        let (data, response) = try await session.data(for: request("/sync/exchange", method: "POST", body: JSONEncoder().encode(ShelfSyncEnvelope(records: records))))
+        let supportsHistory = try await status().history == true
+        let outgoing = supportsHistory ? records : records.filter { !$0.key.hasPrefix("h:") }
+        let (data, response) = try await session.data(for: request("/sync/exchange", method: "POST", body: JSONEncoder().encode(ShelfSyncEnvelope(records: outgoing, history: supportsHistory))))
         try validate(response); guard data.count <= 8_000_000 else { throw CudaError.message("Shelf response was too large.") }
         return try JSONDecoder().decode(ShelfSyncEnvelope.self, from: data)
     }
-    struct Health: Decodable { var id: String; var version: Int; var revision: String? }
+    struct Health: Decodable { var id: String; var version: Int; var revision: String?; var history: Bool? }
     func status() async throws -> Health {
         var req = try request("/sync/health"); req.timeoutInterval = 4
         let (data, response) = try await session.data(for: req); try validate(response)
@@ -315,7 +317,7 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
                 let latest = try await connection.exchange(Array(journal.records.values)); journal.merge(latest.records); apply()
             }
             lastFullSync = Date()
-            lastSync = Date(); message = "Up to date · \(store.state.local.count) offline songs"
+            lastSync = Date(); message = before.history == true ? "Up to date · \(store.state.local.count) offline songs" : "Shelf up to date. Update Cuda on your Mac to sync Last played."
         } catch is CancellationError { message = "Sync paused. It will resume when connected." }
         catch { message = "Sync paused. " + error.localizedDescription; discover() }
     }

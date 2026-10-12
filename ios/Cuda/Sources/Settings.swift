@@ -26,12 +26,23 @@ struct SettingsView: View {
                     do { try spotify.connect() } catch { store.message = error.localizedDescription }
                 }
                 Text(spotify.message).font(.subheadline).foregroundStyle(.secondary)
+                DisclosureGroup("Spotify setup & troubleshooting") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Installed bundle ID").font(.caption).foregroundStyle(.secondary)
+                        Text(SpotifyRecovery.bundleID).font(.callout).textSelection(.enabled)
+                    }
+                    Button("Copy installed bundle ID") { UIPasteboard.general.string = SpotifyRecovery.bundleID }
+                    LabeledContent("Redirect URI") { Text(SpotifyRecovery.redirectURI).font(.callout).textSelection(.enabled) }
+                    Button("Copy redirect URI") { UIPasteboard.general.string = SpotifyRecovery.redirectURI }
+                    Button("Copy active Client ID") { UIPasteboard.general.string = spotify.clientID }.disabled(spotify.clientID.isEmpty)
+                    Text("If Spotify opens with an X, check these values in the same developer app as your active Client ID. Enable its iOS integration and allow the Spotify account signed in on this phone. Sideloading can change the installed bundle ID; use the value shown here.").font(.subheadline).foregroundStyle(.secondary)
+                    Link("Open Spotify Developer Dashboard", destination: URL(string: "https://developer.spotify.com/dashboard")!)
+                }
                 Button("Choose playlists", systemImage: "square.stack") { selecting = true }.disabled(!spotify.hasToken)
                 if spotify.hasToken { Button("Disconnect Spotify", role: .destructive) { spotify.disconnect(); if store.player.current?.platform == "spotify" { store.player.playing = false; store.player.loading = false } } }
             } header: { Text("Spotify") } footer: {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Install Spotify and sign in on this device. Register an iOS app with bundle ID com.veikkaheiskanen.Cuda and redirect URI cuda-spotify://callback. Device sync fills in the Client ID and library connection from your Mac. Connect once here to authorize playback on this iPhone. On-demand playback requires Premium.")
-                    Button("Copy Spotify callback") { UIPasteboard.general.string = "cuda-spotify://callback" }
+                    Text("Install Spotify and sign in on this device. Register the installed bundle ID and redirect URI shown in Spotify setup above. Device sync fills in the Client ID and library connection from your Mac. Connect once here to authorize playback on this iPhone. On-demand playback requires Premium.")
                     Link("Open Spotify Developer Dashboard", destination: URL(string: "https://developer.spotify.com/dashboard")!)
                 }
             }

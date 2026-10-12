@@ -69,14 +69,14 @@ class ShelfSyncService {
   return before!==[...this.assets.keys()].sort().join();
  }
  revision(){return crypto.createHash('sha256').update(JSON.stringify(this.records)).digest('hex');}
- async exchange(input){return this.serial(async()=>{const incoming=validateRecords(input);merge(this.records,incoming);this.atomic('native-sync-records.json',JSON.stringify(this.records));await this.scan();return{records:Object.values(this.records),assets:[...this.assets.values()].map(({file,...a})=>a),offline:this.config.offline};});}
+ async exchange(input,{history=true}={}){return this.serial(async()=>{const incoming=validateRecords(input);merge(this.records,incoming);this.atomic('native-sync-records.json',JSON.stringify(this.records));await this.scan();return{records:Object.values(this.records).filter(r=>history||!r.key.startsWith('h:')),history,assets:[...this.assets.values()].map(({file,...a})=>a),offline:this.config.offline};});}
  async handle(req,res){
   const fail=(code,error)=>{if(!res.headersSent)res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'});if(!res.writableEnded)res.end(JSON.stringify({error}));};
   try{
    const supplied=Buffer.from(String(req.headers.authorization||'').replace(/^Bearer /,'')),expected=Buffer.from(this.config.token);
    if(!this.config.enabled||supplied.length!==expected.length||!crypto.timingSafeEqual(supplied,expected))return fail(401,'Pair this Mac again in Settings.');
    const u=new URL(req.url,'https://localhost');res.setHeader('Cache-Control','no-store');
-   if(u.pathname==='/sync/health'&&req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:this.config.id,version:1,revision:this.revision(),companion:!!this.companion}));}
+   if(u.pathname==='/sync/health'&&req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:this.config.id,version:1,history:true,revision:this.revision(),companion:!!this.companion}));}
    if(u.pathname==='/sync/companion'&&req.method==='GET'){
     if(!this.companion)return fail(404,'Update Cuda on your Mac to connect streaming automatically.');
     res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(this.companion.status()));
@@ -99,7 +99,7 @@ class ShelfSyncService {
    }
    if(u.pathname==='/sync/exchange'&&req.method==='POST'){
     const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>8000000)return fail(413,'Shelf is too large.');chunks.push(chunk);}
-    const input=JSON.parse(Buffer.concat(chunks));const result=await this.exchange(input.records);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));this.emit({event:'syncChanged'});return;
+    const input=JSON.parse(Buffer.concat(chunks));const result=await this.exchange(input.records,{history:input.history===true});res.setHeader('Content-Type','application/json');res.end(JSON.stringify(result));this.emit({event:'syncChanged'});return;
    }
    const hash=u.pathname.slice('/sync/files/'.length);if(!u.pathname.startsWith('/sync/files/')||!hashPattern.test(hash)||!this.config.offline)return fail(404,'Offline song not found.');
    if(req.method==='GET'){

@@ -67,7 +67,7 @@ final class MacShelfSync: ObservableObject {
         do {
             let before = try JSONDecoder().decode(MacSyncStatus.self, from: await store.runtime.call("syncStatus")); lastRevision = before.revision
             let records = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Array(journal.records.values)))
-            let data = try await store.runtime.call("syncExchange", ["records": records])
+            let data = try await store.runtime.call("syncExchange", ["records": records, "history": true])
             let result = try JSONDecoder().decode(ShelfSyncEnvelope.self, from: data)
             // Local mutations may have arrived while the helper was responding.
             journal.merge(result.records)

@@ -42,7 +42,7 @@ async function invoke(method,args) {
  if(!port)throw new Error('Audio services are starting.');
  if(method==='syncStatus')return shelfSync.status();
  if(method==='syncConfigure')return shelfSync.configure(args);
- if(method==='syncExchange')return shelfSync.exchange(args.records||[]);
+ if(method==='syncExchange')return shelfSync.exchange(args.records||[],{history:args.history===true});
  if(method==='playlistOffline')return offlineDownloads.save(args.track);
  if(method==='downloadOffline'){const downloaded=await invoke('api',args);return invoke('import',{paths:[downloaded.path]});}
  if(method==='discordConfigure')return discord.configure(args.enabled,args.clientID);

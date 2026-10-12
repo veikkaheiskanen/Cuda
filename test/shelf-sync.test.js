@@ -50,9 +50,10 @@ test('new offline files are detected, content hashes refresh and outside symlink
 test('listening events sync over pinned service without becoming favourites or file assets',async t=>{
  const {service}=await fixture(t);await service.configure({enabled:true,offline:false});
  const health=JSON.parse((await request(service,'GET','/sync/health')).data),h={key:'h:spotify:abc',clock:Date.now(),device:'phone',deleted:false,track:{...track,localFile:'private-download.m4a'}};
- const result=await request(service,'POST','/sync/exchange',Buffer.from(JSON.stringify({records:[h]})));assert.equal(result.code,200);
+ const result=await request(service,'POST','/sync/exchange',Buffer.from(JSON.stringify({records:[h],history:true})));assert.equal(result.code,200);
  const envelope=JSON.parse(result.data);assert.equal(envelope.assets.length,0);assert.deepEqual(envelope.records.map(r=>r.key),['h:spotify:abc']);assert.equal(envelope.records[0].track.localFile,undefined);
  assert.notEqual(JSON.parse((await request(service,'GET','/sync/health')).data).revision,health.revision);
+ const legacy=await request(service,'POST','/sync/exchange',Buffer.from(JSON.stringify({records:[]})));assert.equal(JSON.parse(legacy.data).records.length,0,'Old iOS must never see history as favourites');
  const newer={...h,clock:h.clock+1,device:'mac'};await service.exchange([newer]);await service.exchange([h]);assert.equal(service.records[h.key].device,'mac');
  assert.throws(()=>validateRecords([{...h,key:'h:spotify:other'}]));
 });

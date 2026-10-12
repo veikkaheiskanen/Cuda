@@ -18,6 +18,7 @@ struct ShelfSyncEnvelope: Codable {
     var records: [ShelfSyncRecord]
     var assets: [ShelfSyncAsset] = []
     var offline: Bool?
+    var history: Bool?
 }
 struct ShelfSyncJournal: Codable {
     var device = UUID().uuidString
