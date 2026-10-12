@@ -12,14 +12,16 @@ A native SwiftUI iPhone and iPad companion to Cuda. Home, Shelf, search, favouri
 | Spotify playlists | Choose playlists in Settings; fetch paginated contents into Shelf and use them as recommendation taste. |
 | YouTube / YouTube Music / SoundCloud | Authenticated Mac companion resolves and proxies playable audio using Cuda's existing extractor and matching-source resolver. Mac must remain awake and reachable. |
 | Auto source | Races matching public sources through the companion, then retries failed playback on alternatives. Spotify tracks use the iOS SDK first, falling back to matching public sources when Spotify fails and the Mac is paired. |
+| Audio | Five-band EQ and presets for supported AVPlayer audio, 0.5–2× speed with pitch preservation, app/device volume and sleep timer. Open Audio in Now playing or Settings. Spotify audio uses Spotify’s own EQ. Unsupported stream formats are identified; downloaded audio can use Cuda EQ. |
+| Last played | Song switches sync in both directions through Device sync. Connected foreground devices probe revisions every three seconds; offline events merge on reconnect without refreshing old history. |
 | Shelf | Persistent local favourites and editable playlists with descriptions, canonical duplicate prevention, queue actions, and deletion confirmation. |
 | Recommendations | Uses favourite, playlist and recent artists, filters recently played tracks, and merges connected catalog results. |
 
-Desktop-only integrations (Discord, desktop window transparency, the Rust Spotify audio engine, native desktop equalizer/pitch DSP, downloader, weekly album discovery and Last.fm) are not included in this first iOS port. Spotify audio belongs to the Spotify app and does not pass through Cuda's audio processing. Mac and iOS Shelves can sync through one-time pairing in Settings. Spotify catalogue imports remain snapshots; refetch from Spotify to refresh upstream changes.
+Desktop-only integrations (Discord, desktop window transparency, the Rust Spotify audio engine, pitch/reverb/echo/distortion DSP, weekly album discovery and Last.fm) are not included in the iOS app. Playlists can be downloaded through the paired Mac into a device-only cache. Spotify audio belongs to the Spotify app and does not pass through Cuda's audio processing. Mac and iOS Shelves can sync through one-time pairing in Settings. Spotify catalogue imports remain snapshots; refetch from Spotify to refresh upstream changes.
 
 ## Install the IPA
 
-The GitHub **iOS** workflow compiles an ARM64 Release application and packages `Cuda-1.1.1-ios-unsigned.ipa`. This is a real device binary, **unsigned**, intended for a tool such as Sideloadly or AltStore that signs apps with your own Apple account. It cannot be installed by opening the file directly, and it is not an App Store / TestFlight build. Follow your signing tool's device trust and Developer Mode instructions. No Apple credentials or signing certificates are included in this repository.
+The GitHub **iOS** workflow compiles an ARM64 Release application and packages `Cuda-1.1.3-ios-unsigned.ipa`. This is a real device binary, **unsigned**, intended for a tool such as Sideloadly or AltStore that signs apps with your own Apple account. It cannot be installed by opening the file directly, and it is not an App Store / TestFlight build. Follow your signing tool's device trust and Developer Mode instructions. No Apple credentials or signing certificates are included in this repository.
 
 Alternatively, install full Xcode and build the project on your Mac. Set your own development team in Signing & Capabilities, select your connected iPhone, and Run. A paid Apple Developer account and appropriate distribution signing are needed for TestFlight/App Store distribution.
 
@@ -29,6 +31,8 @@ Alternatively, install full Xcode and build the project on your Mac. Set your ow
 2. In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), register an iOS integration with bundle ID `com.veikkaheiskanen.Cuda` and redirect URI **`cuda-spotify://callback`**. Allow the account under your app's user access if using development mode.
 3. In Cuda → Settings, enter your app Client ID and tap **Connect Spotify**. This opens Spotify and returns to Cuda for remote control.
 4. Tap **Choose playlists** and **Sync** to fetch the playlists you want to use on Shelf and for recommendations. Spotify may limit which playlists your developer app can access.
+
+If Spotify fails, tap Connect Spotify again after verifying its iOS bundle ID, callback URI and account access. Cuda wakes the local Spotify app, avoids duplicate connections during app switching and retries a stale connection once. A Mac library token is never used as an iPhone playback token.
 
 The app requests only remote playback and library/playlist access. It never asks for a Client Secret. The Spotify SDK's short-lived access token is kept in memory; after expiry or a cold start, reconnect through Spotify. Local favourites are saved immediately; a library sync failure never stops the audio or removes the local favourite.
 
@@ -40,7 +44,8 @@ Keep both devices on the same local network and leave Cuda open on the Mac. Bonj
 
 - **Favourites:** additions and removals sync both ways, including changes made offline.
 - **Playlists:** names, descriptions, songs, edits and deletions sync both ways. Existing Shelves merge on first pairing. Concurrent changes to the same playlist use the most recent revision; edits to separate playlists and favourites merge independently. Spotify selections and account credentials stay on each device.
-- **Offline songs:** new imported and Cuda-downloaded audio copies automatically both ways. SHA-256 verifies transfers and prevents duplicate files. Files are streamed to temporary storage before verification and import, with a 512 MB per-song limit. Removing a favourite or playlist never deletes an audio file from the other device. Turning off offline-song sync keeps Shelf sync enabled.
+- **Last played:** song changes record dated listening events and merge across devices. Foreground devices check for revisions every three seconds; reconnecting merges offline events without making old songs look newly played.
+- **Offline songs:** new imported audio copies automatically both ways. Playlist downloads remain private to the device that requested them and are never exported to the other device. SHA-256 verifies transfers and prevents duplicate files. Files are streamed to temporary storage before verification and import, with a 512 MB per-song limit. Removing a favourite or playlist never deletes an audio file from the other device. Turning off offline-song sync keeps Shelf sync enabled.
 
 iOS syncs on launch, Shelf changes, network reconnect and periodic checks while open. It also requests background processing; **iOS decides when those checks run**, so an app closed or suspended by the system cannot promise immediate detection. Unfinished transfers retry when reachable; previously downloaded songs play without a Mac connection. The Mac listener is off until enabled and exposes only authenticated Shelf sync and audio transfer, not account or desktop control endpoints.
 
