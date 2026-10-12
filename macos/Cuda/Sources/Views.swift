@@ -314,7 +314,7 @@ struct PlaylistDetail: View {
                         HStack { Button("Play", systemImage: "play.fill") { if let first = playlist.tracks.first { player.play(first, in: playlist.tracks) } }.buttonStyle(.glassProminent).disabled(playlist.tracks.isEmpty); Menu { Button("Change cover", systemImage: "photo") { store.setPlaylistArtwork(id) }; if playlist.artwork != nil { Button("Remove cover", systemImage: "photo.badge.minus") { if let index = store.state.playlists.firstIndex(where: { $0.id == id }) { store.state.playlists[index].artwork = nil; store.save() } } }; Button("Edit playlist", systemImage: "pencil") { editing = true }; Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30) }
                     }
                 }.padding(.horizontal, 28)
-                HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
                     if store.downloadingPlaylist == id {
                         ProgressView().controlSize(.small); Text(store.downloadProgress).font(.callout)
                         Button("Cancel", role: .cancel) { store.cancelPlaylistDownload() }

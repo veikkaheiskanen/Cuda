@@ -82,8 +82,8 @@ struct SyncConnection {
             guard next.id == job.id else { throw CudaError.message("Offline download changed unexpectedly.") }; job = next
         }
         guard job.status == "ready", let filename = job.filename, filename == job.id + ".m4a", let hash = job.hash, hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil, let size = job.size, size > 0, size <= 512 * 1024 * 1024 else { throw CudaError.message("Offline download is not ready. Try again.") }
-        let (temp, response) = try await session.download(for: request("/sync/offline-file?id=" + job.id))
-        defer { try? FileManager.default.removeItem(at: temp) }; try validate(response)
+        let (temp, downloadResponse) = try await session.download(for: request("/sync/offline-file?id=" + job.id))
+        defer { try? FileManager.default.removeItem(at: temp) }; try validate(downloadResponse)
         guard (try temp.resourceValues(forKeys: [.fileSizeKey])).fileSize == Int(size), try await DeviceSync.digest(temp) == hash else { throw CudaError.message("Offline audio verification failed. Retry this song.") }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let target = root.appendingPathComponent(filename)

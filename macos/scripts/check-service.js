@@ -19,11 +19,14 @@ function rpc(method,args){return new Promise((resolve,reject)=>{const key=++id;p
  await rpc('api',{path:'https://example.com/api/library'}).then(()=>{throw Error('Foreign API URL accepted');},()=>{});
  const tracks=await rpc('import',{paths:[path.resolve('macos/Cuda/Resources/preview.wav')]});
  if(!tracks.length)throw Error('No imported audio');
+ const privateDownload=await rpc('playlistOffline',{track:tracks[0]});
+ if(!/^[a-f0-9]{64}\.m4a$/.test(privateDownload.filename)||!privateDownload.file.startsWith(path.join(profile,'offline-playlists')+path.sep))throw Error('Playlist cache is not device private');
  if((await fetch(`http://127.0.0.1:${init.port}/api/library`)).status!==401)throw Error('Loopback library has no access control');
  if((await fetch(`http://127.0.0.1:${init.port}/api/library?native_token=${encodeURIComponent('é'.repeat(64))}`)).status!==401)throw Error('Invalid capability was accepted');
  const syncOff=await rpc('syncStatus',{});if(syncOff.enabled)throw Error('Sync listener started without opt-in');
  const metadata=await rpc('syncExchange',{records:[{key:'p:fixture',clock:Date.now(),device:'fixture-phone',deleted:false,playlist:{id:'fixture',name:'Fixture rotation',description:'Original fixture',tracks}}]});
- if(metadata.records.length!==1||metadata.assets.length!==1)throw Error('Packaged Shelf exchange failed');
+ if(metadata.records.length!==1||metadata.assets.length!==1||metadata.assets.some(a=>a.hash===privateDownload.hash))throw Error('Playlist download entered automatic Shelf sync');
+ if(!fs.existsSync(path.join(app,'Assets.car')))throw Error('Native system icon appearances are missing');
  const sync=await rpc('syncConfigure',{enabled:true});if(!sync.enabled||sync.fingerprint.length!==64)throw Error('Packaged TLS sync setup failed');
  const downloaded=await new Promise((resolve,reject)=>{const req=require('node:https').request({host:'127.0.0.1',port:sync.port,path:'/sync/files/'+metadata.assets[0].hash,rejectUnauthorized:false,headers:{Authorization:'Bearer '+sync.token}},res=>{const cert=res.socket.getPeerCertificate().raw;if(crypto.createHash('sha256').update(cert).digest('hex')!==sync.fingerprint)return reject(Error('Wrong pairing certificate'));const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>res.statusCode===200?resolve(Buffer.concat(chunks)):reject(Error('Paired audio transfer failed')));});req.on('error',reject);req.end();});
  if(crypto.createHash('sha256').update(downloaded).digest('hex')!==metadata.assets[0].hash)throw Error('Paired audio checksum mismatch');
