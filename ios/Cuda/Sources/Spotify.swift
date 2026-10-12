@@ -21,6 +21,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     private var connectionWatchdog: Task<Void, Never>?
     private var retrying = false
     private var backgrounded = false
+    private var connecting = false
     private var artworkKey = ""
     private var accessToken = ""
     private var lastState: SPTAppRemotePlayerState?
@@ -84,7 +85,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         }
     }
     private func connectRemote(_ remote: SPTAppRemote) {
-        remote.connect(); connectionWatchdog?.cancel()
+        if !connecting { connecting = true; remote.connect() }; connectionWatchdog?.cancel()
         let id = requestID
         connectionWatchdog = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(10)) } catch { return }
@@ -98,9 +99,9 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         if !accessToken.isEmpty, tokenExpires > Date() { connectRemote(remote) }
         else if let uri = pendingURI ?? lastState?.track.uri { retrying = true; authorize(remote, uri: uri) }
     }
-    func background() { backgrounded = true; connectionWatchdog?.cancel(); remote?.disconnect(); connected = false }
+    func background() { backgrounded = true; connecting = false; connectionWatchdog?.cancel(); remote?.disconnect(); connected = false }
     func deactivate() {
-        acceptsState = false; authorizing = false; pendingURI = nil; wakeURI = nil
+        acceptsState = false; authorizing = false; connecting = false; pendingURI = nil; wakeURI = nil
         requestID = UUID(); connectionWatchdog?.cancel()
         remote?.playerAPI?.pause(nil); remote?.disconnect(); connected = false
     }
@@ -130,11 +131,11 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         }
     }
     private func fail(_ value: String) {
-        connectionWatchdog?.cancel(); authorizing = false; connected = false
+        connectionWatchdog?.cancel(); authorizing = false; connected = false; connecting = false
         message = value; onFailure?(value)
     }
     private func recover(_ error: Error?) {
-        connectionWatchdog?.cancel(); connected = false
+        connectionWatchdog?.cancel(); connected = false; connecting = false
         guard acceptsState, !backgrounded, !authorizing else { return }
         // One device authorization retry for a stale connection, never an app-switch loop.
         if !retrying, let remote, let uri = pendingURI ?? lastState?.track.uri {
@@ -148,7 +149,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     }
     private func established(_ appRemote: SPTAppRemote) {
         guard appRemote === remote, acceptsState, !backgrounded else { appRemote.disconnect(); return }
-        connectionWatchdog?.cancel(); connected = true; message = "Connected to Spotify on this device."
+        connectionWatchdog?.cancel(); connecting = false; connected = true; message = "Connected to Spotify on this device."
         appRemote.playerAPI?.delegate = self
         appRemote.playerAPI?.subscribe(toPlayerState: report)
         // AuthorizeAndPlay already started its song; don't restart it on connection.
@@ -168,7 +169,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     }
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
         Task { @MainActor in
-            guard appRemote === self.remote else { return }; self.connected = false
+            guard appRemote === self.remote else { return }; self.connected = false; self.connecting = false
             if let error, !self.authorizing { self.recover(error) }
         }
     }
