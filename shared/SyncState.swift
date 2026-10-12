@@ -24,7 +24,19 @@ struct ShelfSyncJournal: Codable {
     var records: [String: ShelfSyncRecord] = [:]
     private var clock: Int64 = 0
     private var baseline: [String: ShelfSyncRecord] = [:]
+    // A listening event is recorded only by the player, never by applying remote state.
+    mutating func played(_ track: Track) {
+        clock = max(clock + 1, Int64(Date().timeIntervalSince1970 * 1000))
+        let t = Self.clean(track), key = "h:" + t.key
+        records[key] = ShelfSyncRecord(key: key, clock: clock, device: device, deleted: false, track: t)
+    }
     mutating func capture(_ state: CollectionState) {
+        // Legacy history has no timestamps. Seed it below dated listening events,
+        // oldest first, without refreshing its age on each sync or launch.
+        for (index, track) in state.history.reversed().enumerated() {
+            let t = Self.clean(track), key = "h:" + t.key
+            if records[key] == nil { records[key] = ShelfSyncRecord(key: key, clock: Int64(index + 1), device: device, deleted: false, track: t) }
+        }
         var current: [String: ShelfSyncRecord] = [:]
         for track in state.favourites { let t = Self.clean(track); let key = "f:" + t.key; current[key] = ShelfSyncRecord(key: key, clock: 0, device: device, deleted: false, track: t) }
         for var playlist in state.playlists {
@@ -54,10 +66,11 @@ struct ShelfSyncJournal: Codable {
             guard track.platform == "local" else { return track }
             var copy = track; copy.localFile = state.local.first { $0.key == track.key }?.localFile; return copy
         }
-        state.favourites = Track.unique(active.compactMap { $0.track }.map(local))
+        state.favourites = Track.unique(active.filter { $0.key.hasPrefix("f:") }.compactMap { $0.track }.map(local))
+        state.history = Array(Track.unique(active.filter { $0.key.hasPrefix("h:") }.compactMap { $0.track }.map(local)).prefix(200))
         state.playlists = active.compactMap { $0.playlist }.map { var p = $0; p.tracks = p.tracks.map(local); return p }
         baseline = [:]
-        for record in active { var value = record; value.clock = 0; value.device = device; baseline[record.key] = value }
+        for record in active where !record.key.hasPrefix("h:") { var value = record; value.clock = 0; value.device = device; baseline[record.key] = value }
     }
     static func clean(_ track: Track) -> Track {
         var value = track; value.localFile = nil

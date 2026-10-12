@@ -59,7 +59,7 @@ final class Store: ObservableObject {
     }
     func remember(_ track: Track) {
         guard state.history.first?.key != track.key else { return }
-        state.history = Array(Track.unique([track] + state.history).prefix(100)); save()
+        state.history = Array(Track.unique([track] + state.history).prefix(200)); deviceSync.played(track); save()
     }
     func favourite(_ track: Track) {
         let liked = !state.favourites.contains { $0.key == track.key }

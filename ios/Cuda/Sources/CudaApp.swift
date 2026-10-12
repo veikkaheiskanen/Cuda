@@ -16,7 +16,8 @@ struct CudaApp: App {
                 .modifier(DeviceSyncPrompt(sync: store.deviceSync))
                 .onChange(of: phase) { _, phase in
                     if phase == .active { store.spotify.foreground(); store.deviceSync.activate(true) }
-                    if phase == .background { store.spotify.background(); store.deviceSync.activate(false) }
+                    if phase != .active { store.spotify.background() }
+                    if phase == .background { store.deviceSync.activate(false) }
                 }
                 .onAppear {
                     store.deviceSync.activate(true)

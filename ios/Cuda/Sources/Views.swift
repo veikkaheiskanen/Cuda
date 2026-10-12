@@ -359,6 +359,7 @@ struct NowPlaying: View {
     @Environment(\.dismiss) private var dismiss
     @State private var seeking = false
     @State private var seekPosition = 0.0
+    @State private var audioSettings = false
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
@@ -370,6 +371,12 @@ struct NowPlaying: View {
                     }
                 }
             }.navigationTitle("Now playing").navigationBarTitleDisplayMode(.inline)
+                .sheet(isPresented: $audioSettings) { AudioSettingsView(player: player) }
+                .task {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.environment["CUDA_PREVIEW_AUDIO"] == "1" { try? await Task.sleep(for: .seconds(3)); audioSettings = true }
+                    #endif
+                }
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }; ToolbarItem(placement: .topBarLeading) { NavigationLink { TrackList(title: "Up next", tracks: player.queue, store: store, player: player) } label: { Image(systemName: "list.bullet") }.accessibilityLabel("Up next") } }
         }
     }
@@ -394,6 +401,7 @@ struct NowPlaying: View {
                 if !player.usesSpotify { Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").foregroundStyle(player.repeatOne ? Color.accentColor : Color.secondary).frame(width: 44, height: 44) }.accessibilityLabel("Repeat song") }
             }.buttonStyle(.plain)
             HStack { Text(player.offlinePlaying ? "On this device" : player.current?.sourceName ?? "").font(.subheadline).foregroundStyle(.secondary); Spacer(); Menu { ForEach(Source.allCases) { source in Button(source.label) { player.changeSource(source) } } } label: { Label(player.source.label, systemImage: "chevron.down").font(.subheadline).frame(minHeight: 44) }.disabled(player.current?.platform == "local") }
+            Button("Audio", systemImage: "slider.horizontal.3") { audioSettings = true }.frame(minHeight: 44).accessibilityIdentifier("audio-settings")
             HStack(spacing: 16) { Image(systemName: "speaker.fill").foregroundStyle(.secondary); SystemVolume().frame(height: 32); AirPlay().frame(width: 44, height: 44) }
         }
     }

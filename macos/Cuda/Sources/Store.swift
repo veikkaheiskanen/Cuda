@@ -87,7 +87,7 @@ final class Store: ObservableObject {
     func save() { do { try JSONEncoder().encode(state.saved()).write(to: file, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path); deviceSync.changed() } catch { message = "Cuda could not save your Shelf. Check free disk space." } }
     func played(_ track: Track) {
         guard state.history.first?.sameRecording(track) != true else { return }
-        state.history.removeAll { $0.sameRecording(track) }; state.history.insert(track, at: 0); state.history = Array(state.history.prefix(200)); save()
+        state.history.removeAll { $0.sameRecording(track) }; state.history.insert(track, at: 0); state.history = Array(state.history.prefix(200)); deviceSync.played(track); save()
         if track.platform == "spotify" { Task { try? await runtime.spotifyVoid("played", [try JSONSerialization.jsonObject(with: JSONEncoder().encode(track))]) } }
     }
     func favourite(_ track: Track) {

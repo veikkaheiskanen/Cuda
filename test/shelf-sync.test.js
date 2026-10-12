@@ -46,3 +46,13 @@ test('new offline files are detected, content hashes refresh and outside symlink
  const {service,directory,api}=await fixture(t);const audio=path.join(directory,'library/local_123456789abc.wav');fs.writeFileSync(audio,'One');await api('/api/library-add',{items:[{id:'local_123456789abc',file:path.basename(audio),name:'Fixture'}]});await service.scan();const first=[...service.assets.keys()][0];assert.equal(first,await fileHash(audio));fs.writeFileSync(audio,'Second');assert.equal(await service.scan(),true);assert.notEqual([...service.assets.keys()][0],first);
  fs.unlinkSync(audio);fs.symlinkSync(path.join(directory,'native-sync-records.json'),audio);fs.writeFileSync(path.join(directory,'native-sync-records.json'),'private data');await service.scan();assert.equal(service.assets.size,0);
 });
+
+test('listening events sync over pinned service without becoming favourites or file assets',async t=>{
+ const {service}=await fixture(t);await service.configure({enabled:true,offline:false});
+ const health=JSON.parse((await request(service,'GET','/sync/health')).data),h={key:'h:spotify:abc',clock:Date.now(),device:'phone',deleted:false,track:{...track,localFile:'private-download.m4a'}};
+ const result=await request(service,'POST','/sync/exchange',Buffer.from(JSON.stringify({records:[h]})));assert.equal(result.code,200);
+ const envelope=JSON.parse(result.data);assert.equal(envelope.assets.length,0);assert.deepEqual(envelope.records.map(r=>r.key),['h:spotify:abc']);assert.equal(envelope.records[0].track.localFile,undefined);
+ assert.notEqual(JSON.parse((await request(service,'GET','/sync/health')).data).revision,health.revision);
+ const newer={...h,clock:h.clock+1,device:'mac'};await service.exchange([newer]);await service.exchange([h]);assert.equal(service.records[h.key].device,'mac');
+ assert.throws(()=>validateRecords([{...h,key:'h:spotify:other'}]));
+});

@@ -13,9 +13,9 @@ function cleanTrack(value){
 function validateRecords(input){
  if(!Array.isArray(input)||input.length>20000)throw Error('Shelf is too large.');
  return input.map(r=>{
-  if(!r||typeof r.key!=='string'||r.key.length>220||!/^[fp]:/.test(r.key)||!Number.isSafeInteger(r.clock)||r.clock<0||r.clock>Date.now()+86400000||typeof r.device!=='string'||r.device.length>80||typeof r.deleted!=='boolean')throw Error('Invalid Shelf revision.');
+  if(!r||typeof r.key!=='string'||r.key.length>220||!/^[fph]:/.test(r.key)||!Number.isSafeInteger(r.clock)||r.clock<0||r.clock>Date.now()+86400000||typeof r.device!=='string'||r.device.length>80||typeof r.deleted!=='boolean')throw Error('Invalid Shelf revision.');
   const value={key:r.key,clock:r.clock,device:r.device,deleted:r.deleted};
-  if(!r.deleted){if(r.key.startsWith('f:')){value.track=cleanTrack(r.track);if(r.key!==`f:${value.track.platform}:${value.track.id}`)throw Error('Invalid favourite.');}
+  if(!r.deleted){if(r.key.startsWith('f:')||r.key.startsWith('h:')){value.track=cleanTrack(r.track);if(r.key!==`${r.key.slice(0,2)}${value.track.platform}:${value.track.id}`)throw Error('Invalid song revision.');}
   else {const p=r.playlist;if(!p||typeof p.id!=='string'||r.key!=='p:'+p.id||!Array.isArray(p.tracks)||p.tracks.length>10000)throw Error('Invalid playlist.');value.playlist={id:p.id,name:String(p.name||'Playlist').slice(0,80),description:String(p.description||'').slice(0,300),tracks:p.tracks.map(cleanTrack)};if(typeof p.spotifyID==='string'&&/^[A-Za-z0-9]{1,80}$/.test(p.spotifyID))value.playlist.spotifyID=p.spotifyID;if(typeof p.artwork==='string'&&/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(p.artwork)&&p.artwork.length<=180000)value.playlist.artwork=p.artwork;}}
   return value;
  });
@@ -54,7 +54,7 @@ class ShelfSyncService {
   this.atomic('native-sync-config.enc',this.store.encryptString(JSON.stringify(this.config)));return this.status();
  });}
  status(){const port=this.server?.address()?.port||0;const addresses=Object.values(os.networkInterfaces()).flat().filter(i=>i&&i.family==='IPv4'&&!i.internal&&(/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(i.address))).map(i=>'https://'+i.address+':'+port);
-  return{enabled:!!this.server,offline:this.config.offline,id:this.config.id,port,addresses,fingerprint:this.fingerprint||'',token:this.server?this.config.token:'',message:this.server?'Ready to pair · encrypted connection':'Off'};
+  return{enabled:!!this.server,offline:this.config.offline,id:this.config.id,port,addresses,fingerprint:this.fingerprint||'',token:this.server?this.config.token:'',revision:this.revision(),message:this.server?'Ready to pair · encrypted connection':'Off'};
  }
  async scan(){
   if(!this.config.offline){this.assets.clear();return false;}
@@ -68,6 +68,7 @@ class ShelfSyncService {
   }
   return before!==[...this.assets.keys()].sort().join();
  }
+ revision(){return crypto.createHash('sha256').update(JSON.stringify(this.records)).digest('hex');}
  async exchange(input){return this.serial(async()=>{const incoming=validateRecords(input);merge(this.records,incoming);this.atomic('native-sync-records.json',JSON.stringify(this.records));await this.scan();return{records:Object.values(this.records),assets:[...this.assets.values()].map(({file,...a})=>a),offline:this.config.offline};});}
  async handle(req,res){
   const fail=(code,error)=>{if(!res.headersSent)res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'});if(!res.writableEnded)res.end(JSON.stringify({error}));};
@@ -75,7 +76,7 @@ class ShelfSyncService {
    const supplied=Buffer.from(String(req.headers.authorization||'').replace(/^Bearer /,'')),expected=Buffer.from(this.config.token);
    if(!this.config.enabled||supplied.length!==expected.length||!crypto.timingSafeEqual(supplied,expected))return fail(401,'Pair this Mac again in Settings.');
    const u=new URL(req.url,'https://localhost');res.setHeader('Cache-Control','no-store');
-   if(u.pathname==='/sync/health'&&req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:this.config.id,version:1,companion:!!this.companion}));}
+   if(u.pathname==='/sync/health'&&req.method==='GET'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:this.config.id,version:1,revision:this.revision(),companion:!!this.companion}));}
    if(u.pathname==='/sync/companion'&&req.method==='GET'){
     if(!this.companion)return fail(404,'Update Cuda on your Mac to connect streaming automatically.');
     res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(this.companion.status()));

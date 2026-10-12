@@ -60,6 +60,14 @@ struct SyncConnection {
         try validate(response); guard data.count <= 8_000_000 else { throw CudaError.message("Shelf response was too large.") }
         return try JSONDecoder().decode(ShelfSyncEnvelope.self, from: data)
     }
+    struct Health: Decodable { var id: String; var version: Int; var revision: String? }
+    func status() async throws -> Health {
+        var req = try request("/sync/health"); req.timeoutInterval = 4
+        let (data, response) = try await session.data(for: req); try validate(response)
+        let value = try JSONDecoder().decode(Health.self, from: data)
+        guard value.version == 1, value.id == pairing.id else { throw CudaError.message("This is a different Mac. Pair it in Settings.") }
+        return value
+    }
     func health() async throws -> String {
         struct Health: Decodable { var id: String; var version: Int }
         let (data, response) = try await session.data(for: request("/sync/health")); try validate(response)
@@ -153,10 +161,23 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
         guard foreground else { schedule(); return }
         if monitor == nil { let value = NWPathMonitor(); value.pathUpdateHandler = { [weak self] path in if path.status == .satisfied { Task { @MainActor in guard let self, self.active else { return }; await self.sync() } } }; value.start(queue: DispatchQueue(label: "Cuda.Sync.Network")); monitor = value }
         discover(); Task { await sync() }
-        timer = Task { [weak self] in while !Task.isCancelled { try? await Task.sleep(for: .seconds(15)); guard !Task.isCancelled, let self else { return }; await self.sync() } }
+        timer = Task { [weak self] in while !Task.isCancelled { try? await Task.sleep(for: .seconds(3)); guard !Task.isCancelled, let self else { return }; await self.poll() } }
+    }
+    func played(_ track: Track) { journal.played(track); changed() }
+    private var needsSync = false
+    private var lastRevision: String?
+    private var lastFullSync = Date.distantPast
+    private func poll() async {
+        guard enabled, let pairing, !busy else { return }
+        let connection = SyncConnection(pairing, waitsForConnectivity: false)
+        defer { connection.session.invalidateAndCancel() }
+        do {
+            let value = try await connection.status()
+            if value.revision != lastRevision || Date().timeIntervalSince(lastFullSync) > 15 { await sync() }
+        } catch { if Date().timeIntervalSince(lastFullSync) > 15 { await sync() } }
     }
     func changed() {
-        journal.capture(store.state); persist()
+        journal.capture(store.state); persist(); needsSync = true
         pending?.cancel(); pending = Task { [weak self] in try? await Task.sleep(for: .milliseconds(500)); guard !Task.isCancelled, let self else { return }; await self.sync() }
     }
     func offer(_ url: URL) { do { pendingPair = try SyncPairing.parse(url.absoluteString) } catch { message = error.localizedDescription } }
@@ -249,12 +270,16 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
     }
     func sync() async {
         if !enabled { await refreshPlaybackConnection(); return }
-        guard enabled, let pairing, !busy else { return }; busy = true; defer { busy = false; progress = ""; schedule() }
+        guard enabled, let pairing, !busy else { return }; busy = true; needsSync = false; defer {
+            busy = false; progress = ""; schedule()
+            if needsSync { Task { await sync() } }
+        }
         let connection = SyncConnection(pairing); connectionSession = connection.session; defer { connection.session.invalidateAndCancel(); connectionSession = nil }
         do {
             await refreshPlayback(connection)
             await refreshIntegrations(connection)
             journal.capture(store.state); persist()
+            let before = try await connection.status(); lastRevision = before.revision
             let result = try await connection.exchange(Array(journal.records.values)); journal.merge(result.records); apply()
             if offline && result.offline != false {
                 let remote = Set(result.assets.map(\.hash))
@@ -289,6 +314,7 @@ final class DeviceSync: NSObject, ObservableObject, NetServiceBrowserDelegate, N
                 // Uploaded songs are now on the Mac; get any edits made during transfer.
                 let latest = try await connection.exchange(Array(journal.records.values)); journal.merge(latest.records); apply()
             }
+            lastFullSync = Date()
             lastSync = Date(); message = "Up to date · \(store.state.local.count) offline songs"
         } catch is CancellationError { message = "Sync paused. It will resume when connected." }
         catch { message = "Sync paused. " + error.localizedDescription; discover() }

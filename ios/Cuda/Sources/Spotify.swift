@@ -15,7 +15,12 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
     private var pendingURI: String?
     private var acceptsState = false
     private var authorizing = false
-    private var attemptingSharedPlayback = false
+    private var wakeURI: String?
+    private var tokenExpires = Date.distantPast
+    private var requestID = UUID()
+    private var connectionWatchdog: Task<Void, Never>?
+    private var retrying = false
+    private var backgrounded = false
     private var artworkKey = ""
     private var accessToken = ""
     private var lastState: SPTAppRemotePlayerState?
@@ -25,11 +30,11 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         return own.isEmpty ? macAccount?.clientID ?? "" : own
     }
     var artworkTrackID: String { artworkKey.split(separator: ":").last.map(String.init) ?? "" }
-    var hasToken: Bool { !accessToken.isEmpty || macAccount?.usable == true }
+    var hasToken: Bool { (!accessToken.isEmpty && tokenExpires > Date()) || macAccount?.usable == true }
     func applyMacSetup(_ value: IntegrationSetup.SpotifyAccount?) {
         macAccount = UserDefaults.standard.object(forKey: "sync-accounts") as? Bool == false ? nil : value
     }
-    private var apiToken: String { !accessToken.isEmpty ? accessToken : macAccount?.usable == true ? macAccount!.accessToken : "" }
+    private var apiToken: String { !accessToken.isEmpty && tokenExpires > Date() ? accessToken : macAccount?.usable == true ? macAccount!.accessToken : "" }
 
 
     private func configure() throws -> SPTAppRemote {
@@ -37,30 +42,32 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
             throw CudaError.message("Add your Spotify Client ID in Settings first.")
         }
         if remote == nil || configuredID != clientID {
-            remote?.disconnect(); configuredID = clientID
+            remote?.disconnect(); accessToken = ""; tokenExpires = .distantPast; configuredID = clientID
             let configuration = SPTConfiguration(clientID: clientID, redirectURL: URL(string: "cuda-spotify://callback")!)
             remote = SPTAppRemote(configuration: configuration, logLevel: .none)
             remote?.delegate = self
         }
         return remote!
     }
-    func connect(uri: String = "", useShared: Bool = true) throws {
+    func connect(uri: String = "") throws {
         let remote = try configure()
         guard UIApplication.shared.canOpenURL(URL(string: "spotify://")!) else {
             throw CudaError.message("Install Spotify on this device and sign in, then connect again.")
         }
-        acceptsState = true; authorizing = true; pendingURI = uri.isEmpty ? nil : uri
-        if useShared, let shared = macAccount, shared.usable, shared.clientID == clientID,
-           shared.scope.split(separator: " ").contains("app-remote-control") {
-            attemptingSharedPlayback = true; authorizing = false
-            remote.connectionParameters.accessToken = shared.accessToken
-            message = "Connecting Spotify with your Mac authorization…"; remote.connect(); return
-        }
-        attemptingSharedPlayback = false
+        connectionWatchdog?.cancel(); requestID = UUID(); retrying = false
+        acceptsState = true; pendingURI = uri.isEmpty ? nil : uri
+        // Mac Web API credentials remain for library access. App Remote must wake
+        // and authorize the Spotify app installed on this specific phone.
+        authorize(remote, uri: uri)
+    }
+    private func authorize(_ remote: SPTAppRemote, uri: String) {
+        authorizing = true; wakeURI = uri.isEmpty ? nil : uri
+        let id = requestID
         message = "Finish connecting in Spotify…"
         remote.authorizeAndPlayURI(uri, asRadio: false, additionalScopes: ["playlist-read-private", "playlist-read-collaborative", "user-library-read", "user-library-modify"]) { [weak self] success in
             Task { @MainActor in
-                if !success { self?.message = "Spotify could not open. Install Spotify and retry."; self?.authorizing = false; self?.onFailure?(self?.message ?? "Spotify could not open.") }
+                guard let self, self.requestID == id, self.remote === remote else { return }
+                if !success { self.fail("Spotify could not open. Install Spotify and retry.") }
             }
         }
     }
@@ -68,61 +75,110 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
         guard url.scheme == "cuda-spotify", url.host == "callback", authorizing, let remote else { return }
         authorizing = false
         let parameters = remote.authorizationParameters(from: url)
-        if let token = parameters?[SPTAppRemoteAccessTokenKey] {
-            accessToken = token; remote.connectionParameters.accessToken = token
-            remote.connect(); onAuthorized?()
-        } else { message = parameters?[SPTAppRemoteErrorDescriptionKey] ?? "Spotify sign-in was cancelled."; onFailure?(message) }
+        if let token = parameters?[SPTAppRemoteAccessTokenKey], !token.isEmpty {
+            accessToken = token; tokenExpires = Date(timeIntervalSinceNow: 3500)
+            remote.connectionParameters.accessToken = token
+            connectRemote(remote); onAuthorized?()
+        } else {
+            fail(SpotifyRecovery.authorization(parameters?[SPTAppRemoteErrorDescriptionKey] ?? ""))
+        }
+    }
+    private func connectRemote(_ remote: SPTAppRemote) {
+        remote.connect(); connectionWatchdog?.cancel()
+        let id = requestID
+        connectionWatchdog = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            guard let self, self.requestID == id, !self.backgrounded, !self.connected, self.acceptsState else { return }
+            self.recover(nil)
+        }
     }
     func foreground() {
-        if !accessToken.isEmpty, acceptsState, remote?.isConnected == false { remote?.connect() }
+        backgrounded = false
+        guard acceptsState, !authorizing, let remote, !remote.isConnected else { return }
+        if !accessToken.isEmpty, tokenExpires > Date() { connectRemote(remote) }
+        else if let uri = pendingURI ?? lastState?.track.uri { retrying = true; authorize(remote, uri: uri) }
     }
-    func background() { remote?.disconnect() }
-    func deactivate() { acceptsState = false; pendingURI = nil; remote?.playerAPI?.pause(nil); remote?.disconnect() }
-    func disconnect() { deactivate(); accessToken = ""; remote = nil; connected = false; artwork = nil; message = "Disconnected." }
+    func background() { backgrounded = true; connectionWatchdog?.cancel(); remote?.disconnect(); connected = false }
+    func deactivate() {
+        acceptsState = false; authorizing = false; pendingURI = nil; wakeURI = nil
+        requestID = UUID(); connectionWatchdog?.cancel()
+        remote?.playerAPI?.pause(nil); remote?.disconnect(); connected = false
+    }
+    func disconnect() { deactivate(); accessToken = ""; tokenExpires = .distantPast; remote = nil; connected = false; artwork = nil; message = "Disconnected." }
     func play(_ track: Track) throws {
-        acceptsState = true
-        let uri = "spotify:track:" + track.id
-        if remote?.isConnected == true { remote?.playerAPI?.play(uri, callback: report) }
-        else { try connect(uri: uri) }
+        guard track.id.range(of: "^[a-zA-Z0-9]{22}$", options: .regularExpression) != nil else { throw CudaError.message("This Spotify song has an invalid identifier. Search for it again.") }
+        acceptsState = true; retrying = false; pendingURI = "spotify:track:" + track.id
+        if authorizing { return } // A new selection replaces the pending song during app switching.
+        if let remote, remote.isConnected {
+            requestID = UUID(); remote.playerAPI?.play(pendingURI!, callback: report)
+        } else if let remote, !accessToken.isEmpty, tokenExpires > Date() {
+            requestID = UUID(); wakeURI = nil; connectRemote(remote)
+        } else { try connect(uri: pendingURI!) }
     }
     func toggle(paused: Bool) throws {
         guard let api = remote?.playerAPI, connected else { try connect(uri: pendingURI ?? lastState?.track.uri ?? ""); return }
         if paused { api.resume(report) } else { api.pause(report) }
     }
     func seek(_ seconds: Double) { remote?.playerAPI?.seek(toPosition: Int(seconds * 1000), callback: report) }
-    func next() { remote?.playerAPI?.skip(toNext: report) }
-    func previous() { remote?.playerAPI?.skip(toPrevious: report) }
-    private var report: SPTAppRemoteCallback { { [weak self] _, error in if let error { self?.message = error.localizedDescription; self?.onFailure?(error.localizedDescription) } } }
+    func next() { pendingURI = nil; remote?.playerAPI?.skip(toNext: report) }
+    func previous() { pendingURI = nil; remote?.playerAPI?.skip(toPrevious: report) }
+    private var report: SPTAppRemoteCallback {
+        let id = requestID
+        return { [weak self] _, error in
+            guard let error else { return }
+            Task { @MainActor in guard let self, self.requestID == id, self.acceptsState, !self.backgrounded else { return }; self.recover(error) }
+        }
+    }
+    private func fail(_ value: String) {
+        connectionWatchdog?.cancel(); authorizing = false; connected = false
+        message = value; onFailure?(value)
+    }
+    private func recover(_ error: Error?) {
+        connectionWatchdog?.cancel(); connected = false
+        guard acceptsState, !backgrounded, !authorizing else { return }
+        // One device authorization retry for a stale connection, never an app-switch loop.
+        if !retrying, let remote, let uri = pendingURI ?? lastState?.track.uri {
+            retrying = true; accessToken = ""; tokenExpires = .distantPast
+            remote.disconnect(); requestID = UUID(); authorize(remote, uri: uri); return
+        }
+        fail(SpotifyRecovery.connection(error))
+    }
     nonisolated func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
         Task { @MainActor in self.established(appRemote) }
     }
     private func established(_ appRemote: SPTAppRemote) {
-        guard appRemote === remote else { return }
-        attemptingSharedPlayback = false
-        connected = true; message = "Connected to Spotify on this device."
+        guard appRemote === remote, acceptsState, !backgrounded else { appRemote.disconnect(); return }
+        connectionWatchdog?.cancel(); connected = true; message = "Connected to Spotify on this device."
         appRemote.playerAPI?.delegate = self
         appRemote.playerAPI?.subscribe(toPlayerState: report)
-        if let uri = pendingURI { pendingURI = nil; appRemote.playerAPI?.play(uri, callback: report) }
-    }
-    nonisolated func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
-        Task { @MainActor in
-            guard appRemote === self.remote else { return }
-            if self.attemptingSharedPlayback {
-                self.attemptingSharedPlayback = false
-                do { try self.connect(uri: self.pendingURI ?? "", useShared: false); return } catch { }
+        // AuthorizeAndPlay already started its song; don't restart it on connection.
+        if let uri = pendingURI, uri != wakeURI { appRemote.playerAPI?.play(uri, callback: report) }
+        wakeURI = nil
+        if pendingURI != nil {
+            let id = requestID
+            connectionWatchdog = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(12)) } catch { return }
+                guard let self, self.requestID == id, self.pendingURI != nil, !self.backgrounded else { return }
+                self.recover(nil)
             }
-            self.connected = false; self.message = "Spotify connection stopped. Tap Connect Spotify to resume."
-            self.onFailure?(self.message)
         }
     }
+    nonisolated func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
+        Task { @MainActor in guard appRemote === self.remote else { return }; self.recover(error) }
+    }
     nonisolated func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
-        Task { @MainActor in if appRemote === self.remote { self.connected = false } }
+        Task { @MainActor in
+            guard appRemote === self.remote else { return }; self.connected = false
+            if let error, !self.authorizing { self.recover(error) }
+        }
     }
     nonisolated func playerStateDidChange(_ state: SPTAppRemotePlayerState) {
         Task { @MainActor in self.receive(state) }
     }
     private func receive(_ state: SPTAppRemotePlayerState) {
-        guard acceptsState else { return }; lastState = state
+        guard acceptsState, connected else { return }
+        if let pendingURI, state.track.uri != pendingURI { return }
+        connectionWatchdog?.cancel(); pendingURI = nil; lastState = state
         let item = state.track
         let id = item.uri.split(separator: ":").last.map(String.init) ?? item.uri
         let track = Track(id: id, title: item.name, artist: item.artist.name, platform: "spotify", url: "https://open.spotify.com/track/" + id, duration: Double(item.duration) / 1000)
@@ -131,7 +187,7 @@ final class Spotify: NSObject, ObservableObject, SPTAppRemoteDelegate, SPTAppRem
             artworkKey = item.uri; artwork = nil
             let key = item.uri
             remote?.imageAPI?.fetchImage(forItem: item, with: CGSize(width: 640, height: 640)) { [weak self] value, _ in
-                guard self?.artworkKey == key else { return }; self?.artwork = value as? UIImage
+                Task { @MainActor in guard self?.artworkKey == key else { return }; self?.artwork = value as? UIImage }
             }
         }
     }

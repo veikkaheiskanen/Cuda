@@ -15,6 +15,13 @@ final class CudaUITests: XCTestCase {
         app.buttons["Open now playing"].tap()
         XCTAssertTrue(app.navigationBars["Now playing"].waitForExistence(timeout: 5))
         app.buttons["Favourite"].tap()
+        app.swipeUp()
+        let audio = app.buttons["audio-settings"]
+        XCTAssertTrue(audio.waitForExistence(timeout: 5)); audio.tap()
+        XCTAssertTrue(app.navigationBars["Audio"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["Equalizer"].exists)
+        XCTAssertTrue(app.sliders["Playback speed"].exists)
+        app.buttons["Done"].tap()
         app.buttons["Done"].tap()
         app.tabBars.buttons["Shelf"].tap()
         XCTAssertTrue(app.navigationBars["Shelf"].waitForExistence(timeout: 5))

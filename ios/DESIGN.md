@@ -13,3 +13,5 @@ Compact now playing contains song/artist and playback/skip controls; opening it 
 Light, Dark and System are native color-scheme choices. The app honors Dynamic Type, Reduce Motion and system material accessibility automatically through SwiftUI. It intentionally has no iOS window-tint slider: iOS owns the window surface and its corners.
 
 Verification uses actual iPhone/iPad Simulator screenshots in Light, Dark and accessibility Dynamic Type. Device tests remain necessary for real Spotify sign-in, LAN pairing, battery use and background playback.
+
+Audio is available from Settings and the expanded player. A native Form groups the five-band EQ and presets separately from speed, app/device volume and sleep timer. Values use monospaced digits and sliders have named accessibility labels. EQ activates only after AVPlayer supplies supported PCM; unsupported formats and Spotify App Remote audio explain the limitation. The interface uses the incumbent semantic colors, Dynamic Type and native sheets.

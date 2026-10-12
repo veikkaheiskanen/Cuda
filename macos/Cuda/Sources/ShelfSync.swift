@@ -11,6 +11,7 @@ struct MacSyncStatus: Decodable {
     var fingerprint = ""
     var token = ""
     var message = "Off"
+    var revision: String?
 }
 @MainActor
 final class MacShelfSync: ObservableObject {
@@ -38,11 +39,22 @@ final class MacShelfSync: ObservableObject {
     func start() {
         changed()
         Task { do { status = try JSONDecoder().decode(MacSyncStatus.self, from: await store.runtime.call("syncStatus")); advertise(); if status.enabled { await sync() } } catch { message = error.localizedDescription } }
-        timer = Task { [weak self] in while !Task.isCancelled { try? await Task.sleep(for: .seconds(10)); guard !Task.isCancelled, let self else { return }; if self.status.enabled { await self.sync() } } }
+        timer = Task { [weak self] in while !Task.isCancelled { try? await Task.sleep(for: .seconds(3)); guard !Task.isCancelled, let self else { return }; if self.status.enabled { await self.poll() } } }
+    }
+    func played(_ track: Track) { journal.played(track); changed() }
+    private var needsSync = false
+    private var lastRevision: String?
+    private var lastFullSync = Date.distantPast
+    private func poll() async {
+        guard !busy else { return }
+        do {
+            let value = try JSONDecoder().decode(MacSyncStatus.self, from: await store.runtime.call("syncStatus"))
+            if value.revision != lastRevision || Date().timeIntervalSince(lastFullSync) > 15 { await sync() }
+        } catch { message = "Sync paused. " + error.localizedDescription }
     }
     func changed() {
         guard !applying else { return }
-        journal.capture(store.state); persist()
+        journal.capture(store.state); persist(); needsSync = true
         pending?.cancel(); pending = Task { [weak self] in try? await Task.sleep(for: .milliseconds(350)); guard !Task.isCancelled, let self, self.status.enabled else { return }; await self.sync() }
     }
     func configure(enabled: Bool? = nil, offline: Bool? = nil, reset: Bool = false) async {
@@ -51,8 +63,9 @@ final class MacShelfSync: ObservableObject {
         catch { message = error.localizedDescription }
     }
     func sync() async {
-        guard !busy, store.ready else { return }; busy = true; defer { busy = false }
+        guard !busy, store.ready else { return }; busy = true; needsSync = false; defer { busy = false; if needsSync { Task { await sync() } } }
         do {
+            let before = try JSONDecoder().decode(MacSyncStatus.self, from: await store.runtime.call("syncStatus")); lastRevision = before.revision
             let records = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Array(journal.records.values)))
             let data = try await store.runtime.call("syncExchange", ["records": records])
             let result = try JSONDecoder().decode(ShelfSyncEnvelope.self, from: data)
@@ -60,7 +73,7 @@ final class MacShelfSync: ObservableObject {
             journal.merge(result.records)
             let local: [Track] = try await store.runtime.api("/api/library")
             applying = true; store.state.local = local; journal.apply(to: &store.state); store.save(); applying = false; persist()
-            lastSync = Date(); message = "Ready · \(result.assets.count) offline songs available"
+            lastFullSync = Date(); lastSync = Date(); message = "Ready · \(result.assets.count) offline songs available"
         } catch { applying = false; message = "Sync paused. " + error.localizedDescription }
     }
     private func persist() { do { try JSONEncoder().encode(journal).write(to: file, options: .atomic); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path) } catch { message = "Sync changes could not be saved. Check free disk space." } }
@@ -92,7 +105,7 @@ struct MacSyncSettings: View {
                 HStack { Button("Sync now", systemImage: "arrow.triangle.2.circlepath") { Task { await sync.sync() } }.disabled(sync.busy); if sync.busy { ProgressView().controlSize(.small) }; Button("Reset pairing", role: .destructive) { resetting = true } }
             }
             Text(sync.message).font(.callout).foregroundStyle(.secondary)
-            Text("Favourites, playlists and new offline songs sync automatically over encrypted Wi-Fi. Pairing also shares Spotify library authorization, its Client ID, lyrics provider keys and Last.fm setup over encrypted TLS. Spotify playback may need permission in the iPhone Spotify app. It connects YouTube, YouTube Music and SoundCloud playback on your iPhone—no separate companion setup. Keep Cuda open on an awake Mac on the same trusted local network. Playback streams use a separate local connection.").font(.callout).foregroundStyle(.secondary)
+            Text("Last played, favourites, playlists and new imported offline songs sync automatically over encrypted Wi-Fi. Pairing also shares Spotify library authorization, its Client ID, lyrics provider keys and Last.fm setup over encrypted TLS. Spotify playback may need permission in the iPhone Spotify app. It connects YouTube, YouTube Music and SoundCloud playback on your iPhone—no separate companion setup. Keep Cuda open on an awake Mac on the same trusted local network. Playback streams use a separate local connection.").font(.callout).foregroundStyle(.secondary)
         }.confirmationDialog("Disconnect previously paired devices?", isPresented: $resetting) { Button("Reset pairing", role: .destructive) { Task { await sync.configure(reset: true) } } }
     }
     private func qr(_ value: String) -> NSImage? {

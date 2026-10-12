@@ -98,6 +98,20 @@ final class CudaTests: XCTestCase {
             for _ in 0..<100 { if store.player.playing { break }; try await Task.sleep(for: .milliseconds(100)) }
             XCTAssertTrue(store.player.playing, store.player.error ?? "Paired companion audio did not start")
             XCTAssertEqual(store.player.current?.platform, "youtube")
+            for _ in 0..<100 { if store.player.equalizerAvailable { break }; try await Task.sleep(for: .milliseconds(100)) }
+            XCTAssertTrue(store.player.equalizerAvailable, store.player.equalizerStatus)
+            store.player.effects.enabled = true; store.player.effects.gains = [3, 0, -3, 0, 0]
+            store.player.effects.speed = 1.5; store.player.volume = 0.8
+            let start = store.player.position
+            try await Task.sleep(for: .seconds(2))
+            XCTAssertGreaterThan(store.player.position - start, 2, "Speed did not reach the AVPlayer transport")
+            store.player.effects = AudioSettings(); store.player.volume = 1
+            for _ in 0..<100 { if !sync.busy { break }; try await Task.sleep(for: .milliseconds(100)) }
+            await sync.sync()
+            let historyConnection = SyncConnection(paired); defer { historyConnection.session.invalidateAndCancel() }
+            let updatedHistory = try await historyConnection.exchange([])
+            XCTAssertTrue(updatedHistory.records.contains { $0.key == "h:" + song.key })
+
             let connection = SyncConnection(paired); defer { connection.session.invalidateAndCancel() }
             let name = try await connection.downloadOffline(song, to: store.offlineRoot)
             defer { try? FileManager.default.removeItem(at: store.offlineRoot.appendingPathComponent(name)) }

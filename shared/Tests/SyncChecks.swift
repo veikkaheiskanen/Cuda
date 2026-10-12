@@ -14,6 +14,17 @@ import Foundation
         var local = Track(id: "local_123456789abc", title: "Fixture", artist: "Cuda", platform: "local", url: "file:///private/music", thumbnail: "http://127.0.0.1:44/api/art?native_token=secret", localFile: "local_123456789abc.wav")
         let clean = ShelfSyncJournal.clean(local); precondition(clean.url.isEmpty && clean.thumbnail == nil && clean.localFile == nil)
         local.url = ""; m.local = [local]; m.favourites = [local]; restored.capture(m); restored.apply(to: &m); precondition(m.favourites[0].localFile == local.localFile)
+        let next = Track(id: "next", title: "Next song", artist: "Cuda Sessions", platform: "spotify", url: "https://open.spotify.com/track/next")
+        restored.played(song); restored.played(next); phone.merge(Array(restored.records.values)); phone.apply(to: &p)
+        precondition(p.history.prefix(2).map(\.id) == ["next", "song"])
+        precondition(!p.favourites.contains { $0.id == song.id || $0.id == next.id }, "Listening history must not become favourites")
+        let before = phone.records.filter { $0.key.hasPrefix("h:") }
+        phone.capture(p); phone.apply(to: &p); phone.capture(p)
+        precondition(phone.records.filter { $0.key.hasPrefix("h:") } == before, "Remote history must not be refreshed by sync")
+        phone.played(song); restored.merge(Array(phone.records.values)); restored.apply(to: &m)
+        precondition(m.history.first?.id == "song" && m.history.count == 2)
+        restored.played(local); phone.merge(Array(restored.records.values)); phone.apply(to: &p)
+        precondition(p.history.first?.localFile == nil)
         print("PASS: two-way favourites, playlist edits/removals, restart persistence and local audio mapping")
     }
 }

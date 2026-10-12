@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @ObservedObject var store: Store
@@ -6,10 +7,12 @@ struct SettingsView: View {
     @AppStorage("appearance") private var appearance = "system"
     @AppStorage("spotifyClientID") private var clientID = ""
     @State private var selecting = false
+    @State private var audioSettings = false
     var body: some View {
         Form {
             DeviceSyncSettings(sync: store.deviceSync)
             SyncedIntegrationSettings(sync: store.deviceSync, spotify: spotify)
+            Section("Audio") { Button("Equalizer & playback", systemImage: "slider.horizontal.3") { audioSettings = true } }
             Section("Appearance") {
                 Picker("Theme", selection: $appearance) { Text("System").tag("system"); Text("Light").tag("light"); Text("Dark").tag("dark") }
             }
@@ -28,19 +31,21 @@ struct SettingsView: View {
             } header: { Text("Spotify") } footer: {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Install Spotify and sign in on this device. Register an iOS app with bundle ID com.veikkaheiskanen.Cuda and redirect URI cuda-spotify://callback. Device sync fills in the Client ID and library connection from your Mac. Connect once here to authorize playback on this iPhone. On-demand playback requires Premium.")
+                    Button("Copy Spotify callback") { UIPasteboard.general.string = "cuda-spotify://callback" }
                     Link("Open Spotify Developer Dashboard", destination: URL(string: "https://developer.spotify.com/dashboard")!)
                 }
             }
             CompanionSettings(sync: store.deviceSync)
             Section("About") {
                 Link("built by veikkaheiskanen", destination: URL(string: "https://github.com/veikkaheiskanen")!)
-                LabeledContent("Cuda for iOS", value: "1.1.2")
+                LabeledContent("Cuda for iOS", value: "1.1.3")
                 Link("Source & setup", destination: URL(string: "https://github.com/veikkaheiskanen/Cuda/tree/main/ios")!)
                 Text("powered on:").foregroundStyle(.secondary)
                 Link("Riff by rootless", destination: URL(string: "https://github.com/rootscripts/riff")!)
                 Link("Deck by jarilehtinen", destination: URL(string: "https://github.com/jarilehtinen/deck")!)
             }
         }.navigationTitle("Settings")
+            .sheet(isPresented: $audioSettings) { AudioSettingsView(player: store.player) }
             .sheet(isPresented: $selecting) { SpotifyPlaylistPicker(store: store) }
     }
 }

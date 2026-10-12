@@ -10,6 +10,16 @@ final class Player: ObservableObject {
     @Published var position = 0.0
     @Published var duration = 0.0
     @Published var volume: Float = 1 { didSet { audio.volume = volume } }
+    @Published var effects = AudioSettings() { didSet {
+        equalizer.update(effects)
+        if !usesSpotify, playing { audio.rate = effects.speed }
+        if let data = try? JSONEncoder().encode(effects) { UserDefaults.standard.set(data, forKey: "audio-settings") }
+    } }
+    @Published private(set) var equalizerAvailable = false
+    @Published private(set) var equalizerStatus = "Play a song to use the equalizer."
+    @Published private(set) var sleepDeadline: Date?
+    private let equalizer = EqualizerProcessor()
+    private var sleepTask: Task<Void, Never>?
     @Published var source: Source = .auto
     @Published var queue: [Track] = []
     @Published var shuffle = false
@@ -39,6 +49,10 @@ final class Player: ObservableObject {
 
     init(spotify: Spotify, localRoot: URL, companion: @escaping () -> Companion) {
         self.spotify = spotify; self.localRoot = localRoot; self.companion = companion
+        if let data = UserDefaults.standard.data(forKey: "audio-settings"), var settings = try? JSONDecoder().decode(AudioSettings.self, from: data) {
+            settings.gains = AudioSettings.frequencies.indices.map { settings.gains.indices.contains($0) ? max(-12, min(12, settings.gains[$0])) : 0 }
+            settings.speed = max(0.5, min(2, settings.speed)); effects = settings; equalizer.update(settings)
+        }
         timeToken = audio.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self, !self.usesSpotify else { return }
@@ -58,7 +72,7 @@ final class Player: ObservableObject {
         endToken = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] notification in
             Task { @MainActor in
                 guard let self, let item = notification.object as? AVPlayerItem, item === self.audio.currentItem else { return }
-                if self.repeatOne { self.seek(0); self.audio.play() } else { self.next() }
+                if self.repeatOne { self.seek(0); self.startAudio() } else { self.next() }
             }
         }
         interruptToken = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
@@ -67,7 +81,7 @@ final class Player: ObservableObject {
                       let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
                 if type == .began { self.audio.pause() }
                 else if let options = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt, AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
-                    try? AVAudioSession.sharedInstance().setActive(true); self.audio.play()
+                    try? AVAudioSession.sharedInstance().setActive(true); self.startAudio()
                 }
             }
         }
@@ -104,7 +118,7 @@ final class Player: ObservableObject {
     func play(_ track: Track, in tracks: [Track]? = nil) {
         if let tracks { queue = Track.unique(tracks); queueIndex = queue.firstIndex { $0.key == track.key } ?? 0 }
         else if queue.isEmpty || !queue.contains(where: { $0.key == track.key }) { queue = [track]; queueIndex = 0 }
-        offlinePlaying = false
+        offlinePlaying = false; equalizerAvailable = false; equalizerStatus = "Preparing audio…"
         selectedOriginal = track; excluded = []; generation = UUID(); task?.cancel(); watchdog?.cancel()
         audio.pause(); audio.replaceCurrentItem(with: nil); status = nil
         current = track; position = 0; duration = track.duration ?? 0; loading = true; playing = false; error = nil
@@ -134,7 +148,7 @@ final class Player: ObservableObject {
                         guard source == .auto, Companion.validAddress(companion.address), !companion.token.isEmpty else { throw error }
                         excluded.insert(track.key); load(track, generation: key); return
                     }
-                    loading = false
+                    equalizerStatus = "Spotify plays in the Spotify app. Use its equalizer for Spotify audio."
                     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
                     return
                 }
@@ -159,7 +173,31 @@ final class Player: ObservableObject {
                         if item.status == .failed { self.failed(item.error?.localizedDescription ?? "This audio stream could not start.", generation: key) }
                     }
                 }
-                audio.replaceCurrentItem(with: item); audio.play()
+                item.audioTimePitchAlgorithm = .spectral
+                audio.replaceCurrentItem(with: item); startAudio()
+                Task { [weak self, weak item] in
+                    guard let self, let item else { return }
+                    do {
+                        let tracks = try await item.asset.loadTracks(withMediaType: .audio)
+                        try Task.checkCancellation(); guard self.generation == key, self.audio.currentItem === item else { return }
+                        guard let track = tracks.first else { self.equalizerStatus = "EQ isn't available on this stream. Download the playlist for offline audio effects."; return }
+                        let tap = try PlayerAudioTap(self.equalizer) { [weak self] supported in
+                            Task { @MainActor in
+                                guard let self, self.generation == key else { return }
+                                self.equalizerAvailable = supported
+                                self.equalizerStatus = supported ? "Equalizer ready" : "EQ isn't available for this audio format."
+                            }
+                        }.create()
+                        let parameters = AVMutableAudioMixInputParameters(track: track); parameters.audioTapProcessor = tap
+                        let mix = AVMutableAudioMix(); mix.inputParameters = [parameters]; item.audioMix = mix
+                        self.equalizerStatus = "Checking stream support…"
+                        Task { [weak self] in
+                            try? await Task.sleep(for: .seconds(6))
+                            guard let self, self.generation == key, !self.equalizerAvailable else { return }
+                            self.equalizerStatus = "EQ isn't available on this stream. Download the playlist to use audio effects offline."
+                        }
+                    } catch { if self.generation == key { self.equalizerStatus = "EQ isn't available on this stream. Download the playlist to use audio effects offline." } }
+                }
                 watchdog = Task { [weak self] in
                     do { try await Task.sleep(for: .seconds(15)) } catch { return }
                     guard let self, self.generation == key, self.loading else { return }
@@ -179,11 +217,22 @@ final class Player: ObservableObject {
         guard let current else { return }
         if usesSpotify { do { try spotify.toggle(paused: !playing) } catch { self.error = error.localizedDescription }; return }
         if loading { task?.cancel(); watchdog?.cancel(); generation = UUID(); loading = false; audio.pause(); return }
-        if playing { audio.pause() } else if audio.currentItem?.status == .failed || audio.currentItem == nil { play(current) } else { audio.play() }
+        if playing { audio.pause() } else if audio.currentItem?.status == .failed || audio.currentItem == nil { play(current) } else { startAudio() }
+    }
+    private func startAudio() { audio.playImmediately(atRate: max(0.5, min(2, effects.speed))) }
+    func sleep(after minutes: Int?) {
+        sleepTask?.cancel(); sleepDeadline = minutes.map { Date(timeIntervalSinceNow: Double($0 * 60)) }
+        guard let minutes else { return }
+        sleepTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(minutes * 60)) } catch { return }
+            guard let self else { return }
+            if self.usesSpotify { try? self.spotify.toggle(paused: false) } else { self.audio.pause() }
+            self.playing = false; self.sleepDeadline = nil
+        }
     }
     func stop() {
         task?.cancel(); watchdog?.cancel(); generation = UUID(); audio.pause(); audio.replaceCurrentItem(with: nil); spotify.deactivate()
-        current = nil; selectedOriginal = nil; playing = false; loading = false; offlinePlaying = false
+        current = nil; selectedOriginal = nil; playing = false; loading = false; offlinePlaying = false; equalizerAvailable = false; equalizerStatus = "Play a song to use the equalizer."; sleep(after: nil)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
     func seek(_ seconds: Double) {
@@ -212,6 +261,6 @@ final class Player: ObservableObject {
     private func updateNowPlaying() {
         guard let current, !usesSpotify else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: current.title, MPMediaItemPropertyArtist: current.artist,
-            MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position, MPNowPlayingInfoPropertyPlaybackRate: playing ? 1 : 0]
+            MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position, MPNowPlayingInfoPropertyPlaybackRate: playing ? effects.speed : 0]
     }
 }
