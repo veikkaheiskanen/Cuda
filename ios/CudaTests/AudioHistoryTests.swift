@@ -35,6 +35,14 @@ final class AudioHistoryTests: XCTestCase {
         var restored = try JSONDecoder().decode(ShelfSyncJournal.self, from: JSONEncoder().encode(mac))
         restored.capture(state); XCTAssertEqual(restored.records, mac.records)
     }
+    @MainActor
+    func testSleepTimerDoesNotPretendToControlSpotifyInTheBackground() {
+        let player = Player(spotify: Spotify(), localRoot: FileManager.default.temporaryDirectory, companion: { Companion(address: "", token: "") })
+        player.current = Track(id: String(repeating: "a", count: 22), title: "Fixture", artist: "Cuda Sessions", platform: "spotify", url: "")
+        player.sleep(after: 15); XCTAssertNil(player.sleepDeadline)
+        player.current = nil; player.sleep(after: 15); XCTAssertNotNil(player.sleepDeadline)
+        player.sleep(after: nil); XCTAssertNil(player.sleepDeadline)
+    }
     func testSpotifyRecoveryDoesNotExposeRawAuthorizationOrUnknownErrors() {
         let error = NSError(domain: "Spotify", code: -1000, userInfo: [NSLocalizedDescriptionKey: "unknown error secret-token"])
         let message = SpotifyRecovery.connection(error)

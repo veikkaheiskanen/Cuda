@@ -141,7 +141,7 @@ final class Player: ObservableObject {
                         selected = match
                     }
                     try Task.checkCancellation(); guard generation == key else { return }
-                    current = selected
+                    current = selected; sleep(after: nil)
                     do { try spotify.play(selected) }
                     catch {
                         let companion = self.companion()
@@ -223,10 +223,12 @@ final class Player: ObservableObject {
     func sleep(after minutes: Int?) {
         sleepTask?.cancel(); sleepDeadline = minutes.map { Date(timeIntervalSinceNow: Double($0 * 60)) }
         guard let minutes else { return }
+        guard !usesSpotify else { sleepDeadline = nil; return }
         sleepTask = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(minutes * 60)) } catch { return }
             guard let self else { return }
-            if self.usesSpotify { try? self.spotify.toggle(paused: false) } else { self.audio.pause() }
+            guard !self.usesSpotify else { self.sleepDeadline = nil; return }
+            self.audio.pause()
             self.playing = false; self.sleepDeadline = nil
         }
     }

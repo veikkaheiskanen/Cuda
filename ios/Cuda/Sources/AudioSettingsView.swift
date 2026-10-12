@@ -9,7 +9,7 @@ struct AudioSettingsView: View {
                 if player.usesSpotify {
                     Section {
                         Label("Spotify handles this audio", systemImage: "music.note")
-                        Text("Use the equalizer in Spotify's Settings → Playback. Cuda's EQ and speed controls apply to imported audio, downloaded playlists and supported public streams.").foregroundStyle(.secondary)
+                        Text("Use the equalizer in Spotify's Settings → Playback. Cuda's EQ and speed controls apply to imported audio, downloaded playlists and supported public streams. Sleep timer needs audio playing in Cuda.").foregroundStyle(.secondary)
                     }
                 }
                 Section {
@@ -53,6 +53,7 @@ struct AudioSettingsView: View {
                     } label: {
                         HStack { Label("Sleep timer", systemImage: "moon.zzz"); Spacer(); if let date = player.sleepDeadline { Text(date, style: .time) } else { Text("Off") } }
                     }
+                    .disabled(player.usesSpotify)
                     Button("Reset audio settings") { player.effects = AudioSettings(); player.volume = 1; player.sleep(after: nil) }
                 }
             }.navigationTitle("Audio").navigationBarTitleDisplayMode(.inline)
