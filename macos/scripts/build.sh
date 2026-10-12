@@ -31,6 +31,15 @@ xcrun swiftc -module-cache-path "$build/module-cache" -swift-version 5 -parse-as
   -framework SwiftUI -framework AppKit -framework AVFoundation -framework MediaPlayer -framework Security
 cp "$root/macos/Cuda/Info.plist" "$app/Contents/Info.plist"
 cp "$root/macos/Cuda/Resources/Cuda.icns" "$app/Contents/Resources/"
+icon_assets="${CUDA_NATIVE_ICON_ASSETS:-$build/icon-assets}"
+if xcrun --find actool >/dev/null 2>&1; then
+  bash "$root/macos/scripts/compile-icons.sh" "$icon_assets"
+fi
+if [[ -f "$icon_assets/Assets.car" ]]; then
+  cp "$icon_assets/Assets.car" "$app/Contents/Resources/"
+  /usr/libexec/PlistBuddy -c 'Add :CFBundleIconName string Cuda' "$app/Contents/Info.plist"
+  if [[ -f "$icon_assets/Cuda.icns" ]]; then cp "$icon_assets/Cuda.icns" "$app/Contents/Resources/Cuda.icns"; fi
+fi
 if [[ "$mode" == debug ]]; then cp "$root"/macos/Cuda/Resources/*.png "$root/macos/Cuda/Resources/preview.wav" "$app/Contents/Resources/"; fi
 cp "$node_binary" "$app/Contents/Resources/runtime/node"
 node_license="$(dirname "$node_binary")/../LICENSE"

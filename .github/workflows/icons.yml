@@ -1,0 +1,20 @@
+name: Native app icons
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['assets/Cuda.icon/**', 'assets/IconExports/**', 'macos/scripts/compile-icons.sh', '.github/workflows/icons.yml']
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile all system icon appearances
+        run: bash macos/scripts/compile-icons.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cuda-system-icons
+          path: macos/build/icon-assets
+          if-no-files-found: error
