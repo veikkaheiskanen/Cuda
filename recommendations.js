@@ -3,6 +3,8 @@ const fs = require('node:fs'), path = require('node:path');
 const {normalize, sameRecording} = require('./source-selection');
 const artistKey = t => normalize(String(t.artist || '').split(/,| & /)[0]);
 function genreName(value) { const name=value.trim().toLowerCase(); return ({'hip-hop/rap':'hip hop','hip-hop':'hip hop','hip-hop/rap music':'hip hop','r&b/soul':'r&b','rnb':'r&b'})[name] || name; }
+const credits = name => String(name || '').split(/\s*,\s*|\s*&\s*/).map(normalize).filter(Boolean);
+const sameCredits = (a,b) => credits(a).some(name=>credits(b).includes(name));
 const genresOf = t => [...new Set((Array.isArray(t.genres) ? t.genres : []).filter(g => typeof g === 'string' && g.length <= 64).map(genreName).filter(Boolean))];
 function profileFor(history, favourites, playlists = []) {
   const artists = new Map(), genres = new Map(), listened = new Map();
@@ -23,11 +25,21 @@ function profileFor(history, favourites, playlists = []) {
 function rankRecommendations(candidates, profile, history, genre = 'all', limit = 20, seen = []) {
   const artistWeights = new Map(profile.artists.map(a => [normalize(a.name.split(/,| & /)[0]), a]));
   const recent = history.slice(0, 12), ranked = [];
+  const historyText = history.map(t=>t.title).join(' ').toLowerCase();
+  const unwanted = ['cover','instrumental','slowed','sped up','reverb','remix'];
   for (const t of candidates) {
     if (!t?.id || !t.url || t.playable === false || recent.some(r => sameRecording(r,t))) continue;
+    if (/\b(interview|haastattelu|takahuonehaastattelu|stand up|komediaklubi|podcast|reaction|tutorial)\b/i.test(t.title)) continue;
+    if(unwanted.some(word=>t.title.toLowerCase().includes(word)&&!historyText.includes(word)))continue;
+    // Public search often returns uploader names, including namesakes. A
+    // declared performer in a video title outranks that uploader for relevance.
+    const performer = ['youtube','ytmusic','soundcloud'].includes(t.platform) ? t.title.match(/^(.{2,70}?)\s+[-–—]\s+.+$/)?.[1] : null;
+    const credited = performer ? artistKey({artist:performer}) : artistKey(t);
     const durations=history.map(r=>r.duration).filter(d=>d>0).sort((a,b)=>a-b);
     if(durations.length && t.duration>Math.max(900,4*durations[Math.floor(durations.length/2)]))continue;
-    const artist = artistWeights.get(artistKey(t)), tags = genresOf(t);
+    const artist = artistWeights.get(credited), tags = genresOf(t);
+    const genreAffinity = tags.some(g=>(profile.weights[g] || 0)>0);
+    if (!artist && !genreAffinity) continue;
     const relevant = tags.includes(genre) || artist?.genres.includes(genre);
     if (genre !== 'all' && !relevant) continue;
     let score = Math.min(8, artist?.weight || 0) + tags.reduce((s,g) => s + Math.min(4, profile.weights[g] || 0), 0);
@@ -65,17 +77,17 @@ function createGenreLookup({directory, country = 'US', fetcher = fetch, now = Da
   function catalogGenre(track) {
     const job = catalogTail.then(async () => {
       await pause(Math.max(0, 3100 - (now()-catalogLast))); catalogLast=now();
-      const response = await fetcher('https://itunes.apple.com/search?'+new URLSearchParams({term:track.artist+' '+track.title,entity:'song',limit:'5',country}), {signal:AbortSignal.timeout(5000)});
+      const response = await fetcher('https://itunes.apple.com/search?'+new URLSearchParams({term:track.artist.split(/,| & /)[0]+' '+track.title,entity:'song',limit:'5',country}), {signal:AbortSignal.timeout(5000)});
       if (!response.ok) return [];
       const result = await response.json();
       const title = normalize(track.title).replace(artistKey(track)+' ','');
-      const match = (result.results || []).find(t => normalize(t.trackName) === title && normalize(t.artistName.split(/,| & /)[0]) === artistKey(track));
+      const match = (result.results || []).find(t => normalize(t.trackName) === title && sameCredits(t.artistName, track.artist));
       return match?.primaryGenreName ? [genreName(match.primaryGenreName)] : [];
     }); catalogTail=job.catch(()=>{}); return job;
   }
   return async function enrich(track) {
     if (genresOf(track).length || !artistKey(track) || /^unknown/.test(artistKey(track))) return track;
-    const key = normalize(track.artist)+'|'+normalize(track.title)+'|'+country;
+    const key = 'v2|'+normalize(track.artist)+'|'+normalize(track.title)+'|'+country;
     const saved = cache[key];
     if (saved && saved.expires > now()) return {...track, genres:saved.genres};
     try {

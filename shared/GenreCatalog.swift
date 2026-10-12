@@ -18,20 +18,23 @@ actor GenreCatalog {
     private func normalized(_ text: String) -> String {
         text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX")).components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }.joined(separator: " ")
     }
+    private func credits(_ name: String) -> Set<String> {
+        Set(name.components(separatedBy: CharacterSet(charactersIn: ",&")).map { normalized($0) }.filter { !$0.isEmpty })
+    }
     func enrich(_ track: Track) async -> Track {
         guard (track.genres ?? []).isEmpty, track.artist != "Unknown artist" else { return track }
-        let key = normalized(track.artist) + "|" + normalized(track.title) + "|" + country
+        let key = "v2|" + normalized(track.artist) + "|" + normalized(track.title) + "|" + country
         if let saved = cache[key], saved.expires > Date() { var t = track; t.genres = saved.genres; return t }
         let wait = max(0, nextRequest.timeIntervalSinceNow); nextRequest = Date().addingTimeInterval(wait + spacing)
         do {
             if wait > 0 { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }; try Task.checkCancellation()
             var url = URLComponents(string: "https://itunes.apple.com/search")!
-            url.queryItems = [.init(name: "term", value: track.artist + " " + track.title), .init(name: "entity", value: "song"), .init(name: "limit", value: "5"), .init(name: "country", value: country)]
+            url.queryItems = [.init(name: "term", value: (track.artist.components(separatedBy: ",").first ?? track.artist) + " " + track.title), .init(name: "entity", value: "song"), .init(name: "limit", value: "5"), .init(name: "country", value: country)]
             var request = URLRequest(url: url.url!); request.timeoutInterval = 5
             let (data,response) = try await session.data(for: request)
             guard (response as? HTTPURLResponse)?.statusCode == 200, let json = try JSONSerialization.jsonObject(with: data) as? [String: Any], let results = json["results"] as? [[String: Any]] else { return track }
-            let artist = normalized(track.artist.components(separatedBy: ",").first ?? track.artist)
-            let match = results.first { normalized($0["trackName"] as? String ?? "") == normalized(track.title) && normalized(($0["artistName"] as? String ?? "").components(separatedBy: ",").first ?? "") == artist }
+            let artist = credits(track.artist)
+            let match = results.first { normalized($0["trackName"] as? String ?? "") == normalized(track.title) && !credits($0["artistName"] as? String ?? "").isDisjoint(with: artist) }
             let raw = (match?["primaryGenreName"] as? String ?? "").lowercased()
             let name = ["hip-hop/rap": "hip hop", "r&b/soul": "r&b"][raw] ?? raw
             let genres = name.isEmpty ? [] : [name]

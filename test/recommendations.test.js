@@ -52,3 +52,13 @@ test('regional catalogue fallback finds local releases using the configured devi
  const lookup=createGenreLookup({country:'FI',pause:async()=>{},fetcher:async url=>{const u=new URL(url);if(u.hostname==='itunes.apple.com')market=u.searchParams.get('country');return{ok:true,json:async()=>u.hostname==='itunes.apple.com'?{results:[{trackName:'Toivottavasti',artistName:'Ares',primaryGenreName:'Hip-Hop/Rap'}]}:{recordings:[]}};}});
  assert.deepEqual((await lookup(track('region','Ares',[],'Toivottavasti'))).genres,['hip hop']);assert.equal(market,'FI');
 });
+test('discovery rejects namesake uploaders, comedy interviews and unsolicited altered recordings',()=>{
+ const history=[track('played','Artist',['Hip hop'])],profile=profileFor(history,[]);
+ const candidates=[track('interview','Artist',[],'Artist stand up haastattelu'),track('namesake','Artist',[],'Other Artist - New song'),track('slowed','Artist',[],'Artist - Song slowed instrumental'),track('unrelated','Unrelated',[],'Random music'),track('good','Artist',[],'Fresh song')];
+ assert.deepEqual(rankRecommendations(candidates,profile,history).map(t=>t.id),['good']);
+});
+test('genre lookup matches collaboration credits in either order and searches the primary performer',async()=>{
+ let term;
+ const lookup=createGenreLookup({country:'FI',pause:async()=>{},fetcher:async url=>{const u=new URL(url);if(u.hostname==='itunes.apple.com')term=u.searchParams.get('term');return{ok:true,json:async()=>u.hostname==='itunes.apple.com'?{results:[{trackName:'Song',artistName:'Second & First',primaryGenreName:'Hip-Hop/Rap'}]}:{recordings:[]}};}});
+ assert.deepEqual((await lookup(track('duet','First, Second',[],'Song'))).genres,['hip hop']);assert.equal(term,'First Song');
+});
