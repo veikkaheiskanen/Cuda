@@ -928,7 +928,7 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
     // Never play an unrelated SoundCloud search result while naming it as the
     // requested recording/source. The renderer can try matching alternatives.
     const raw = String(error.message || 'Audio extraction failed');
-    const message = /DRM protected/i.test(raw) ? `This recording is protected by ${platform === 'soundcloud' ? 'SoundCloud' : 'the source'}. Choose another audio source.` : /Sign in|login|private|unavailable|not available/i.test(raw) ? 'This recording is unavailable from the selected source. Choose another audio source.' : /timed out/i.test(raw) ? 'The audio source timed out. Retry or choose another source.' : raw.replace(/https?:\/\/\S+/g, '[source]').slice(-600);
+    const message = /DRM protected/i.test(raw) ? `This recording is protected by ${platform === 'soundcloud' ? 'SoundCloud' : 'the source'}. Choose another audio source.` : /Sign in|login/i.test(raw) ? `${platform === 'soundcloud' ? 'SoundCloud' : 'YouTube'} requires account authorization on your Mac. Retry or choose another audio source.` : /private|unavailable|not available/i.test(raw) ? 'This recording is unavailable from the selected source. Choose another audio source.' : /timed out/i.test(raw) ? 'The audio source timed out. Retry or choose another source.' : raw.replace(/https?:\/\/\S+/g, '[source]').slice(-600);
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: false, error: message }));
   }

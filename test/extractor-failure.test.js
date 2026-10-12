@@ -7,5 +7,5 @@ test('mobile extraction surfaces provider refusal instead of parsing null output
  const server=require('../server');t.after(async()=>{await server.stopServer();process.env=saved;fs.rmSync(root,{recursive:true,force:true});});
  const port=await server.startServer(0);
  const response=await fetch('http://127.0.0.1:'+port+'/api/stream-info?mobile=1&platform=youtube&id=fixture&url='+encodeURIComponent('https://www.youtube.com/watch?v=fixture'));
- const result=await response.json();assert.equal(result.success,false);assert.match(result.error,/sign in required/);assert.doesNotMatch(result.error,/did not return an audio/);
+ const result=await response.json();assert.equal(result.success,false);assert.match(result.error,/requires account authorization on your Mac/);assert.doesNotMatch(result.error,/did not return an audio/);
 });
