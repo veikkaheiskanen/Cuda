@@ -6,7 +6,7 @@
 
 **Your music. A little more calm.**
 
-Cuda is a music player for Apple Silicon, built by [veikkaheiskanen](https://github.com/veikkaheiskanen). A native SwiftUI interface with Apple’s actual Liquid Glass brings Spotify, YouTube, YouTube Music, SoundCloud, and your own audio files into one place.
+Cuda is a music player for Apple Silicon, built by [veikkaheiskanen](https://github.com/veikkaheiskanen). A native SwiftUI interface with Apple’s actual Liquid Glass brings Spotify, YouTube, YouTube Music, SoundCloud, optional Audius, and your own audio files into one place.
 
 Built with help from ChatGPT
 
@@ -16,7 +16,9 @@ Keep Mac and iPhone together with **Settings → Device sync**: one-time QR/link
 
 ## A place for every song
 
-- **Home, made personal.** Recommendations, recently played music, and playlists are always close by. Connected Spotify playlists help shape what appears next.
+- **Home, made personal.** Recommendations, recently played music, and playlists are always close by. Genres come from your listening history; recent listening, favourites and playlists shape what appears next.
+- **Your services.** Settings → Streaming services lets you opt out of providers on this device. Disabled services are excluded from search, recommendations and automatic playback; imported and downloaded audio remains available. Audius is available when enabled. [How discovery works](docs/DISCOVERY.md).
+- **Keep Cuda current.** Native Mac updates are signed and distributed through GitHub, with checks and automatic downloads in Settings. iOS can check and offer the latest IPA; Sideloadly still signs and installs it. [Update setup](docs/UPDATES.md).
 - **Your Shelf.** Favourites and playlists live together in two easy-to-browse artwork rows. Create a mix, edit its name and description, and add songs without duplicates.
 - **Listen your way.** Auto races matching sources and uses the first ready stream. Prefer a particular service? Choose it from the player's source menu.
 - **A quieter player.** The compact bar keeps the song and essential controls in view. Open it for large artwork, seeking, shuffle, repeat, volume, and audio settings.
