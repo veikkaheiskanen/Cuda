@@ -130,6 +130,7 @@ final class NativeWindowMaterial: NSVisualEffectView {
 }
 struct Cover: View {
     var track: Track?
+    var image: NSImage? = nil
     var body: some View {
         // The layout is owned by this square, never by the image's intrinsic size.
         GeometryReader { geometry in
@@ -145,7 +146,8 @@ struct Cover: View {
         .accessibilityHidden(true)
     }
     @ViewBuilder private var artwork: some View {
-        if let raw = track?.thumbnail, raw.hasPrefix("demo-"), let url = Bundle.main.url(forResource: raw, withExtension: "png"), let image = NSImage(contentsOf: url) {
+        if let image { Image(nsImage: image).resizable().scaledToFill() }
+        else if let raw = track?.thumbnail, raw.hasPrefix("demo-"), let url = Bundle.main.url(forResource: raw, withExtension: "png"), let image = NSImage(contentsOf: url) {
             Image(nsImage: image).resizable().scaledToFill()
         } else if let raw = track?.thumbnail, let url = URL(string: raw), ["https", "http"].contains(url.scheme ?? ""), url.scheme == "https" || url.host == "127.0.0.1" {
             AsyncImage(url: url) { image in image.resizable().scaledToFill() } placeholder: { fallback }
@@ -246,7 +248,7 @@ struct PlaylistShelf: View {
                 LazyHStack(alignment: .top, spacing: 20) {
                     ForEach(store.state.playlists) { playlist in
                         Button { open(playlist.id) } label: {
-                            VStack(alignment: .leading, spacing: 8) { Cover(track: playlist.tracks.first).frame(width: 168, height: 168); Text(playlist.name).font(.headline).lineLimit(2); Text(playlist.description.isEmpty ? "\(playlist.tracks.count) songs" : playlist.description).font(.callout).foregroundStyle(.secondary).lineLimit(2) }.frame(width: 168, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 8) { PlaylistCover(playlist: playlist).frame(width: 168, height: 168); Text(playlist.name).font(.headline).lineLimit(2); Text(playlist.description.isEmpty ? "\(playlist.tracks.count) songs" : playlist.description).font(.callout).foregroundStyle(.secondary).lineLimit(2) }.frame(width: 168, alignment: .leading)
                         }.buttonStyle(.plain)
                     }
                 }
@@ -305,13 +307,23 @@ struct PlaylistDetail: View {
             VStack(alignment: .leading, spacing: 16) {
                 Button("Back to Shelf", systemImage: "chevron.left", action: back).buttonStyle(.plain).foregroundStyle(.tint).padding(.horizontal, 28).padding(.top, 20)
                 HStack(alignment: .center, spacing: 24) {
-                    Cover(track: playlist.tracks.first).frame(width: 160, height: 160)
+                    PlaylistCover(playlist: playlist).frame(width: 160, height: 160)
                     VStack(alignment: .leading, spacing: 14) {
                         Header(title: playlist.name, subtitle: playlist.description)
                         Text("\(playlist.tracks.count) songs").foregroundStyle(.secondary)
-                        HStack { Button("Play", systemImage: "play.fill") { if let first = playlist.tracks.first { player.play(first, in: playlist.tracks) } }.buttonStyle(.glassProminent).disabled(playlist.tracks.isEmpty); Menu { Button("Edit playlist", systemImage: "pencil") { editing = true }; Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30) }
+                        HStack { Button("Play", systemImage: "play.fill") { if let first = playlist.tracks.first { player.play(first, in: playlist.tracks) } }.buttonStyle(.glassProminent).disabled(playlist.tracks.isEmpty); Menu { Button("Change cover", systemImage: "photo") { store.setPlaylistArtwork(id) }; if playlist.artwork != nil { Button("Remove cover", systemImage: "photo.badge.minus") { if let index = store.state.playlists.firstIndex(where: { $0.id == id }) { store.state.playlists[index].artwork = nil; store.save() } } }; Button("Edit playlist", systemImage: "pencil") { editing = true }; Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true } } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30) }
                     }
                 }.padding(.horizontal, 28)
+                HStack(spacing: 12) {
+                    if store.downloadingPlaylist == id {
+                        ProgressView().controlSize(.small); Text(store.downloadProgress).font(.callout)
+                        Button("Cancel", role: .cancel) { store.cancelPlaylistDownload() }
+                    } else {
+                        Button("Download on this Mac", systemImage: "arrow.down.circle") { store.downloadPlaylist(id) }.disabled(store.downloadingPlaylist != nil || playlist.tracks.isEmpty)
+                        if store.offlineCount(playlist) > 0 { Text("\(store.offlineCount(playlist)) of \(playlist.tracks.count) available offline").font(.callout).foregroundStyle(.secondary); Button("Remove downloads", role: .destructive) { store.removePlaylistDownloads(id) } }
+                    }
+                }.padding(.horizontal, 28)
+                Text("Downloads stay on this Mac. Public-source availability may vary.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 28)
                 List { ForEach(playlist.tracks, id: \.key) { track in TrackRow(track: track, queue: playlist.tracks, store: store, player: player).contextMenu { Button("Remove from playlist", systemImage: "minus.circle") { if let index = store.state.playlists.firstIndex(where: { $0.id == id }) { store.state.playlists[index].tracks.removeAll { $0.sameRecording(track) }; store.save() } } } } }.listStyle(.inset)
             }
             .sheet(isPresented: $editing) { PlaylistEditor(name: playlist.name, description: playlist.description) { name, description in if let index = store.state.playlists.firstIndex(where: { $0.id == id }) { store.state.playlists[index].name = name; store.state.playlists[index].description = description; store.save() } } }
@@ -349,7 +361,7 @@ struct CompactPlayer: View {
     private func row(wide: Bool) -> some View {
         HStack(spacing: 16) {
             Button(action: expand) {
-                HStack(spacing: 12) { Cover(track: player.current).frame(width: 48, height: 48); VStack(alignment: .leading, spacing: 3) { Text(player.current?.title ?? "Choose a song").font(.headline).lineLimit(1); Text(player.current?.artist ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1); Text(player.current?.sourceName ?? "").font(.caption).foregroundStyle(.secondary) }.frame(minWidth: wide ? 140 : 80, maxWidth: .infinity, alignment: .leading) }
+                HStack(spacing: 12) { Cover(track: player.current).frame(width: 48, height: 48); VStack(alignment: .leading, spacing: 3) { Text(player.current?.title ?? "Choose a song").font(.headline).lineLimit(1); Text(player.current?.artist ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1); Text(player.offlinePlaying ? "On this Mac" : player.current?.sourceName ?? "").font(.caption).foregroundStyle(.secondary) }.frame(minWidth: wide ? 140 : 80, maxWidth: .infinity, alignment: .leading) }
             }.buttonStyle(.plain).accessibilityLabel("Open now playing")
             Transport(player: player, large: false)
             if wide { Image(systemName: "speaker.wave.2").foregroundStyle(.secondary); Slider(value: $player.volume, in: 0...1).frame(width: 80).accessibilityLabel("Volume") }
@@ -402,10 +414,19 @@ VStack(alignment: .leading, spacing: 24) {
                     HStack(alignment: .top) { VStack(alignment: .leading, spacing: 6) { Text(player.current?.title ?? "Choose a song").font(.title.bold()).lineLimit(3); Text(player.current?.artist ?? "").foregroundStyle(.secondary) }; Spacer(); Button { if let track = player.current { store.favourite(track) } } label: { Image(systemName: store.state.favourites.contains(where: { $0.sameRecording(player.current) }) ? "heart.fill" : "heart") }.buttonStyle(.glass).accessibilityLabel("Favourite") }
                     VStack(spacing: 6) { Slider(value: Binding(get: { dragging ? seek : min(player.position, max(1, player.duration)) }, set: { seek = $0 }), in: 0...max(1, player.duration)) { editing in dragging = editing; if !editing { player.seek(seek) } }.accessibilityLabel("Playback position"); HStack { Text(time(player.position)); Spacer(); Text(time(player.duration)) }.font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                     HStack { Button { player.shuffle.toggle() } label: { Image(systemName: "shuffle").foregroundStyle(player.shuffle ? Color.accentColor : .secondary) }.buttonStyle(.plain).accessibilityLabel("Shuffle"); Spacer(); Transport(player: player, large: true); Spacer(); Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").foregroundStyle(player.repeatOne ? Color.accentColor : .secondary) }.buttonStyle(.plain).accessibilityLabel("Repeat") }
-                    HStack { Text(player.current?.sourceName ?? "").font(.callout).foregroundStyle(.secondary); Spacer(); SourceMenu(player: player) }
+                    HStack { Text(player.offlinePlaying ? "On this Mac" : player.current?.sourceName ?? "").font(.callout).foregroundStyle(.secondary); Spacer(); SourceMenu(player: player) }
                     HStack { Button { audio = true } label: { Label("Audio", systemImage: "slider.horizontal.3") }.buttonStyle(.glass); Image(systemName: "speaker.wave.2").foregroundStyle(.secondary); Slider(value: $player.volume, in: 0...1).accessibilityLabel("Volume") }
                 }
     }
 }
 func time(_ value: Double) -> String { let seconds = max(0, Int(value.isFinite ? value : 0)); return String(format: "%d:%02d", seconds / 60, seconds % 60) }
 extension Notification.Name { static let cudaSearch = Notification.Name("CudaSearch"); static let cudaHome = Notification.Name("CudaHome"); static let cudaPlayer = Notification.Name("CudaPlayer") }
+
+struct PlaylistCover: View {
+    var playlist: Playlist
+    private var custom: NSImage? {
+        guard let raw = playlist.artwork, raw.hasPrefix("data:image/"), let encoded = raw.split(separator: ",", maxSplits: 1).last, let data = Data(base64Encoded: String(encoded)) else { return nil }
+        return NSImage(data: data)
+    }
+    var body: some View { Cover(track: playlist.tracks.first, image: custom) }
+}

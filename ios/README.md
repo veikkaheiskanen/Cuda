@@ -90,3 +90,14 @@ Cuda Native **1.0.7+** and Cuda for iOS **1.1.2+** share configured Spotify Clie
 In iOS Settings → Connected services, turn off **Use accounts and keys from Mac** to remove the imported Keychain snapshot. Disconnecting or switching Macs clears the shared setup. Manual Spotify Client IDs take priority, and an independently authorized iPhone Spotify session is preserved. Spotify playback still needs Spotify installed and signed in on the phone; a shared token with `app-remote-control` permission is tried first, with official device authorization as fallback. Existing Mac authorizations without that permission can share the library immediately but may need the one-tap iPhone playback authorization.
 
 Public music availability is provider-dependent. The Ares track reported in testing was refused by YouTube's bot/sign-in check from this network; SoundCloud returned only a 30-second preview. A source refusal is now reported instead of parsing yt-dlp's `null` output as an audio stream. Alternate recordings are still checked for artist/title/duration; they must not silently replace a full track with a preview or a different recording. Browser/account authorization for YouTube is not manufactured by copying Spotify credentials.
+
+
+### Playlist covers and device-only offline downloads
+
+Open a playlist and choose **Change cover** from its more menu. Mac uses the system file picker; iPhone/iPad uses Photos. Cuda crops the chosen image square and syncs the small cover with playlist metadata.
+
+Choose **Download on this Mac/device** in the playlist. Downloads are kept in a separate private cache and catalogue, outside the synced audio library. Playlist metadata and covers still sync, but downloaded playlist audio is **never automatically transferred to another device**. Download explicitly on each device that needs offline listening. Existing imported-file syncing remains available separately in Device sync Settings. **Remove downloads** removes private cache copies without deleting the playlist or imported music.
+
+Public-source downloads are supported when the provider allows them. Spotify playlist tracks are matched to public recordings using title, artist and duration; Cuda never exports Spotify DRM audio. A playlist may download partially when a public recording is unavailable. Progress and the available-offline count show what actually succeeded. iOS needs its paired Mac online while resolving/downloading, then cached songs play independently with Auto selected.
+
+The native builds compile `assets/Cuda.icon` with Apple's asset compiler for system icon appearances, alongside the six supplied PNG exports archived in `assets/IconExports`. Mac builds can reuse a compiled `Assets.car` through `CUDA_NATIVE_ICON_ASSETS` on a machine that only has Command Line Tools. The dedicated Native app icons workflow produces those assets.

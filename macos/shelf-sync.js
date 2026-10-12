@@ -16,15 +16,15 @@ function validateRecords(input){
   if(!r||typeof r.key!=='string'||r.key.length>220||!/^[fp]:/.test(r.key)||!Number.isSafeInteger(r.clock)||r.clock<0||r.clock>Date.now()+86400000||typeof r.device!=='string'||r.device.length>80||typeof r.deleted!=='boolean')throw Error('Invalid Shelf revision.');
   const value={key:r.key,clock:r.clock,device:r.device,deleted:r.deleted};
   if(!r.deleted){if(r.key.startsWith('f:')){value.track=cleanTrack(r.track);if(r.key!==`f:${value.track.platform}:${value.track.id}`)throw Error('Invalid favourite.');}
-  else {const p=r.playlist;if(!p||typeof p.id!=='string'||r.key!=='p:'+p.id||!Array.isArray(p.tracks)||p.tracks.length>10000)throw Error('Invalid playlist.');value.playlist={id:p.id,name:String(p.name||'Playlist').slice(0,80),description:String(p.description||'').slice(0,300),tracks:p.tracks.map(cleanTrack)};if(typeof p.spotifyID==='string'&&/^[A-Za-z0-9]{1,80}$/.test(p.spotifyID))value.playlist.spotifyID=p.spotifyID;}}
+  else {const p=r.playlist;if(!p||typeof p.id!=='string'||r.key!=='p:'+p.id||!Array.isArray(p.tracks)||p.tracks.length>10000)throw Error('Invalid playlist.');value.playlist={id:p.id,name:String(p.name||'Playlist').slice(0,80),description:String(p.description||'').slice(0,300),tracks:p.tracks.map(cleanTrack)};if(typeof p.spotifyID==='string'&&/^[A-Za-z0-9]{1,80}$/.test(p.spotifyID))value.playlist.spotifyID=p.spotifyID;if(typeof p.artwork==='string'&&/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$/.test(p.artwork)&&p.artwork.length<=180000)value.playlist.artwork=p.artwork;}}
   return value;
  });
 }
 function merge(records,incoming){for(const r of incoming){const old=records[r.key];if(!old||old.clock<r.clock||old.clock===r.clock&&old.device<r.device)records[r.key]=r;}}
 async function fileHash(file){const hash=crypto.createHash('sha256');for await(const chunk of fs.createReadStream(file))hash.update(chunk);return hash.digest('hex');}
 class ShelfSyncService {
- constructor({directory,store,api,emit=()=>{},listenPort=38474,companion=null,integrations=null}){
-  this.companion=companion;this.integrations=integrations;
+ constructor({directory,store,api,emit=()=>{},listenPort=38474,companion=null,integrations=null,offlineDownloads=null}){
+  this.companion=companion;this.integrations=integrations;this.offlineDownloads=offlineDownloads;
   this.directory=directory;this.store=store;this.api=api;this.emit=emit;this.listenPort=listenPort;this.records={};this.assets=new Map();this.cache=new Map();this.queue=Promise.resolve();this.config={enabled:false,offline:true,id:crypto.randomUUID(),token:crypto.randomBytes(32).toString('hex')};
   try{this.config={...this.config,...JSON.parse(store.decryptString(fs.readFileSync(path.join(directory,'native-sync-config.enc'))))};}catch{}
   try{this.records=JSON.parse(fs.readFileSync(path.join(directory,'native-sync-records.json'),'utf8'));}catch{}
@@ -83,6 +83,18 @@ class ShelfSyncService {
    if(u.pathname==='/sync/integrations'&&req.method==='GET'){
     if(!this.integrations)return fail(404,'Update Cuda on your Mac for automatic account setup.');
     res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({version:1,macID:this.config.id,...await this.integrations()}));
+   }
+
+   if(u.pathname==='/sync/offline-download'&&req.method==='POST'){
+    if(!this.offlineDownloads)return fail(404,'Update Cuda on your Mac to download playlists.');
+    const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>32000)return fail(413,'Song metadata is too large.');chunks.push(chunk);}
+    const value=this.offlineDownloads.start(JSON.parse(Buffer.concat(chunks)).track);res.setHeader('Content-Type','application/json');res.writeHead(202);return res.end(JSON.stringify(value));
+   }
+   if((u.pathname==='/sync/offline-status'||u.pathname==='/sync/offline-file')&&req.method==='GET'){
+    if(!this.offlineDownloads)return fail(404,'Update Cuda on your Mac to download playlists.');
+    const id=u.searchParams.get('id');if(!hashPattern.test(id||''))return fail(400,'Invalid download.');
+    if(u.pathname==='/sync/offline-status'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(this.offlineDownloads.status(id)));}
+    const file=this.offlineDownloads.file(id);res.setHeader('Content-Type','audio/mp4');res.setHeader('Content-Length',fs.statSync(file).size);await pipeline(fs.createReadStream(file,{flags:fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW}),res);return;
    }
    if(u.pathname==='/sync/exchange'&&req.method==='POST'){
     const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>8000000)return fail(413,'Shelf is too large.');chunks.push(chunk);}

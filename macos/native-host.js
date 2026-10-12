@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const root=path.resolve(__dirname,'..');
 const send=value=>process.stdout.write(JSON.stringify(value)+'\n');
 console.log=()=>{};console.warn=()=>{};console.error=()=>{};
-let spotify,lyrics,shelfSync,port,closing=false,searchAbort;
+let spotify,lyrics,shelfSync,offlineDownloads,port,closing=false,searchAbort;
 const discord = new (require('./discord-presence').DiscordPresence)({emit: value => send({event: 'discord', value})});
 const serviceToken=crypto.randomBytes(32).toString('hex');
 function privateMedia(value) {
@@ -25,7 +25,11 @@ async function invoke(method,args) {
   process.env.CUDA_NATIVE_SERVICE_TOKEN=serviceToken;
   const server=require('../server');server.setSpotifyProvider(spotify);port=await server.startServer(0);
   const companion=new (require('./mobile-companion').MobileCompanion)({upstream:'http://127.0.0.1:'+port,serviceToken});
-  shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send,companion,integrations:async()=>({
+  offlineDownloads=new (require('./offline-downloads').OfflineDownloads)({directory,resolve:async track=>{
+   if(track.platform!=='spotify')return track;
+   const value=await invoke('api',{path:'/api/playback-source',body:{track,exclude:[track.platform+':'+track.id],mobile:true}});return value.track;
+  }});
+  shelfSync=new (require('./shelf-sync').ShelfSyncService)({directory,store:secureStore(Buffer.from(args.key,'base64')),api:(route,body)=>invoke('api',{path:route,body}),emit:send,companion,offlineDownloads,integrations:async()=>({
    spotify:await spotify.mobileSession(),
    lyrics:Object.fromEntries(['musixmatch','lyricfindSearch','lyricfindDisplay','genius','territory'].map(key=>[key,String(lyrics.keys[key]||'')])),
    lastfm:{username:String(spotify.status().lastfm?.username||''),apiKey:String(spotify.status().lastfm?.apiKey||'')}
@@ -39,6 +43,7 @@ async function invoke(method,args) {
  if(method==='syncStatus')return shelfSync.status();
  if(method==='syncConfigure')return shelfSync.configure(args);
  if(method==='syncExchange')return shelfSync.exchange(args.records||[]);
+ if(method==='playlistOffline')return offlineDownloads.save(args.track);
  if(method==='downloadOffline'){const downloaded=await invoke('api',args);return invoke('import',{paths:[downloaded.path]});}
  if(method==='discordConfigure')return discord.configure(args.enabled,args.clientID);
  if(method==='discordUpdate'){discord.update(args);return discord.status;}

@@ -9,7 +9,7 @@ const {ShelfSyncService,fileHash}=require('../../macos/shelf-sync'),{secureStore
  fs.writeFileSync(path.join(directory,'library.json'),JSON.stringify(index));
  const api=async(route,body)=>{if(route==='/api/library')return Object.values(index);if(route==='/api/library-add'){for(const value of body.items)index[value.id]={...value,platform:'local',title:value.name,artist:'Cuda Sessions'};fs.writeFileSync(path.join(directory,'library.json'),JSON.stringify(index));return{success:true};}throw Error('Unexpected fixture API');};
  const nativeToken=crypto.randomBytes(32).toString('hex'),audio=fs.readFileSync(source);
- const publicTrack={...track,id:'public-fixture',platform:'youtube',title:'Paired streaming fixture',url:'https://example.com/original-fixture'};
+ const publicTrack={...track,id:'public-fixture',platform:'youtube',title:'Paired streaming fixture',url:'https://www.youtube.com/watch?v=original-fixture'};
  const upstream=http.createServer((req,res)=>{
   if(req.headers['x-cuda-native-token']!==nativeToken){res.writeHead(401);return res.end();}
   if(req.url.startsWith('/api/local-track')){
@@ -21,7 +21,10 @@ const {ShelfSyncService,fileHash}=require('../../macos/shelf-sync'),{secureStore
  });
  await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
  const companion=new (require('../../macos/mobile-companion').MobileCompanion)({upstream:'http://127.0.0.1:'+upstream.address().port,serviceToken:nativeToken});
- const service=new ShelfSyncService({directory,api,store:secureStore(crypto.randomBytes(32)),listenPort:38474,companion,integrations:async()=>({spotify:{clientID:'a'.repeat(32),connected:true,accessToken:'isolated-fixture-only',expiresAt:Date.now()+3600000,scope:'playlist-read-private',account:'Test listener'},lyrics:{musixmatch:'isolated-key',territory:'US'},lastfm:{username:'test-listener',apiKey:'isolated-lastfm-key'}})});const status=await service.configure({enabled:true});
+ const offlineAudio=path.join(directory,'fixture.m4a');require('node:child_process').execFileSync('/usr/bin/afconvert',['-f','m4af','-d','aac',source,offlineAudio]);
+ const offlineHash=await fileHash(offlineAudio),offlineSize=fs.statSync(offlineAudio).size;
+ const offlineDownloads={start:t=>{const id=crypto.createHash('sha256').update(t.platform+':'+t.id).digest('hex');return{id,status:'ready'};},status:id=>({id,status:'ready',filename:id+'.m4a',hash:offlineHash,size:offlineSize}),file:()=>offlineAudio};
+ const service=new ShelfSyncService({directory,api,store:secureStore(crypto.randomBytes(32)),listenPort:38474,companion,offlineDownloads,integrations:async()=>({spotify:{clientID:'a'.repeat(32),connected:true,accessToken:'isolated-fixture-only',expiresAt:Date.now()+3600000,scope:'playlist-read-private',account:'Test listener'},lyrics:{musixmatch:'isolated-key',territory:'US'},lastfm:{username:'test-listener',apiKey:'isolated-lastfm-key'}})});const status=await service.configure({enabled:true});
  await service.exchange([{key:'p:sync-fixture',clock:1,device:'mac-fixture',deleted:false,playlist:{id:'sync-fixture',name:'Mac sync fixture',description:'Original test music',tracks:[track]}}]);
  const link=new URL('cuda-sync://pair');for(const [key,value] of Object.entries({address:'https://127.0.0.1:'+status.port,key:status.token,cert:status.fingerprint,id:status.id}))link.searchParams.set(key,value);
  fs.writeFileSync('ios/CudaTests/SyncFixture.json',JSON.stringify({link:link.href}));console.log('Isolated TLS sync fixture ready.');

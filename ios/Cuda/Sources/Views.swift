@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 import MediaPlayer
 import AVKit
@@ -223,7 +224,7 @@ struct PlaylistShelf: View {
                     ForEach(store.state.playlists) { playlist in
                         NavigationLink { PlaylistView(id: playlist.id, store: store, player: player) } label: {
                             VStack(alignment: .leading, spacing: 8) {
-                                Cover(track: playlist.tracks.first).frame(width: 168, height: 168)
+                                PlaylistCover(playlist: playlist).frame(width: 168, height: 168)
                                 Text(playlist.name).font(.headline).lineLimit(2)
                                 Text(playlist.description.isEmpty ? "\(playlist.tracks.count) songs" : playlist.description).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                             }.frame(width: 168, alignment: .leading)
@@ -248,6 +249,8 @@ struct PlaylistView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editing = false
     @State private var deleting = false
+    @State private var choosingArtwork = false
+    @State private var artworkSelection: PhotosPickerItem?
     private var playlist: Playlist? { store.state.playlists.first { $0.id == id } }
     var body: some View {
         Group {
@@ -255,10 +258,22 @@ struct PlaylistView: View {
                 List {
                     Section {
                         HStack(alignment: .center, spacing: 20) {
-                            Cover(track: playlist.tracks.first).frame(width: 112, height: 112)
+                            PlaylistCover(playlist: playlist).frame(width: 112, height: 112)
                             VStack(alignment: .leading, spacing: 8) { Text(playlist.description).foregroundStyle(.secondary); Text("\(playlist.tracks.count) songs").font(.subheadline); Button("Play", systemImage: "play.fill") { if let first = playlist.tracks.first { player.play(first, in: playlist.tracks) } }.buttonStyle(.borderedProminent).disabled(playlist.tracks.isEmpty) }
                         }.padding(.vertical, 12)
                     }
+                    Section {
+                        if store.downloadingPlaylist == id {
+                            HStack { ProgressView(); Text(store.downloadProgress).font(.subheadline) }
+                            Button("Cancel download", role: .cancel) { store.cancelPlaylistDownload() }
+                        } else {
+                            Button("Download on this device", systemImage: "arrow.down.circle") { store.downloadPlaylist(id) }.disabled(store.downloadingPlaylist != nil || playlist.tracks.isEmpty)
+                            if store.offlineCount(playlist) > 0 {
+                                Text("\(store.offlineCount(playlist)) of \(playlist.tracks.count) available offline").foregroundStyle(.secondary)
+                                Button("Remove downloads", role: .destructive) { store.removePlaylistDownloads(id) }
+                            }
+                        }
+                    } footer: { Text("Downloaded audio stays on this device. Your paired Mac resolves matching public sources; some songs may be unavailable.") }
                     ForEach(playlist.tracks, id: \.key) { track in
                         TrackRow(track: track, store: store, player: player, queue: playlist.tracks)
                             .swipeActions { Button("Remove", role: .destructive) { store.remove(track, playlistID: id) } }
@@ -266,7 +281,7 @@ struct PlaylistView: View {
                     if playlist.tracks.isEmpty { Text("Add songs using the song’s more menu.").foregroundStyle(.secondary) }
                 }.listStyle(.plain).navigationTitle(playlist.name).navigationBarTitleDisplayMode(.inline)
                     .toolbar {
-                        Menu { Button("Edit playlist", systemImage: "pencil") { editing = true }; Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true } } label: { Image(systemName: "ellipsis") }
+                        Menu { Button("Change cover", systemImage: "photo") { choosingArtwork = true }; if playlist.artwork != nil { Button("Remove cover", systemImage: "photo.badge.minus") { if let index = store.state.playlists.firstIndex(where: { $0.id == id }) { store.state.playlists[index].artwork = nil; store.save() } } }; Button("Edit playlist", systemImage: "pencil") { editing = true }; Button("Delete playlist", systemImage: "trash", role: .destructive) { deleting = true } } label: { Image(systemName: "ellipsis") }
                     }
                     .sheet(isPresented: $editing) {
                         PlaylistEditor(name: playlist.name, description: playlist.description) { name, description in
@@ -277,7 +292,10 @@ struct PlaylistView: View {
                         Button("Delete playlist", role: .destructive) { store.state.playlists.removeAll { $0.id == id }; store.save(); dismiss() }
                     }
             } else { ContentUnavailableView("Playlist removed", systemImage: "square.stack") }
-        }
+        }.photosPicker(isPresented: $choosingArtwork, selection: $artworkSelection, matching: .images)
+            .onChange(of: artworkSelection) { _, item in
+                Task { do { if let data = try await item?.loadTransferable(type: Data.self), data.count <= 20_000_000 { store.setPlaylistArtwork(data, id: id) } } catch { store.message = "This playlist image could not be loaded." } }
+            }
     }
 }
 struct PlaylistEditor: View {
@@ -367,15 +385,15 @@ struct NowPlaying: View {
                 HStack { Text(time(player.position)); Spacer(); Text(time(player.duration)) }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
-                if player.current?.platform != "spotify" { Button { player.shuffle.toggle() } label: { Image(systemName: "shuffle").foregroundStyle(player.shuffle ? Color.accentColor : Color.secondary).frame(width: 44, height: 44) }.accessibilityLabel("Shuffle") }
+                if !player.usesSpotify { Button { player.shuffle.toggle() } label: { Image(systemName: "shuffle").foregroundStyle(player.shuffle ? Color.accentColor : Color.secondary).frame(width: 44, height: 44) }.accessibilityLabel("Shuffle") }
                 Spacer(minLength: 0)
                 Button { player.previous() } label: { Image(systemName: "backward.end.fill").font(.title).frame(width: 44, height: 44) }.accessibilityLabel("Previous song")
                 Button { player.toggle() } label: { Group { if player.loading { ProgressView().tint(.white) } else { Image(systemName: player.playing ? "pause.fill" : "play.fill").font(.largeTitle) } }.frame(width: 68, height: 68).background(Color.accentColor, in: Circle()).foregroundStyle(.white) }.accessibilityLabel(player.playing ? "Pause" : "Play")
                 Button { player.next() } label: { Image(systemName: "forward.end.fill").font(.title).frame(width: 44, height: 44) }.accessibilityLabel("Next song")
                 Spacer(minLength: 0)
-                if player.current?.platform != "spotify" { Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").foregroundStyle(player.repeatOne ? Color.accentColor : Color.secondary).frame(width: 44, height: 44) }.accessibilityLabel("Repeat song") }
+                if !player.usesSpotify { Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").foregroundStyle(player.repeatOne ? Color.accentColor : Color.secondary).frame(width: 44, height: 44) }.accessibilityLabel("Repeat song") }
             }.buttonStyle(.plain)
-            HStack { Text(player.current?.sourceName ?? "").font(.subheadline).foregroundStyle(.secondary); Spacer(); Menu { ForEach(Source.allCases) { source in Button(source.label) { player.changeSource(source) } } } label: { Label(player.source.label, systemImage: "chevron.down").font(.subheadline).frame(minHeight: 44) }.disabled(player.current?.platform == "local") }
+            HStack { Text(player.offlinePlaying ? "On this device" : player.current?.sourceName ?? "").font(.subheadline).foregroundStyle(.secondary); Spacer(); Menu { ForEach(Source.allCases) { source in Button(source.label) { player.changeSource(source) } } } label: { Label(player.source.label, systemImage: "chevron.down").font(.subheadline).frame(minHeight: 44) }.disabled(player.current?.platform == "local") }
             HStack(spacing: 16) { Image(systemName: "speaker.fill").foregroundStyle(.secondary); SystemVolume().frame(height: 32); AirPlay().frame(width: 44, height: 44) }
         }
     }
@@ -393,4 +411,13 @@ struct SystemVolume: UIViewRepresentable {
 struct AirPlay: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView { let view = AVRoutePickerView(); view.activeTintColor = .systemBlue; return view }
     func updateUIView(_ view: AVRoutePickerView, context: Context) {}
+}
+
+struct PlaylistCover: View {
+    var playlist: Playlist
+    private var custom: UIImage? {
+        guard let raw = playlist.artwork, raw.hasPrefix("data:image/"), let encoded = raw.split(separator: ",", maxSplits: 1).last, let data = Data(base64Encoded: String(encoded)) else { return nil }
+        return UIImage(data: data)
+    }
+    var body: some View { Cover(track: playlist.tracks.first, image: custom) }
 }

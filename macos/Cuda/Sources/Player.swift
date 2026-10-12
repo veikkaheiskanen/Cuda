@@ -17,6 +17,9 @@ final class Player: ObservableObject {
     @Published var repeatOne = false
     @Published var error: String?
     let runtime: Runtime
+    var offlineURL: ((Track) -> URL?)?
+    @Published private(set) var offlinePlaying = false
+    private var usesSpotify: Bool { current?.platform == "spotify" && !offlinePlaying }
     var didPlay: ((Track) -> Void)?
     private let local = LocalAudio()
     private var task: Task<Void, Never>?
@@ -35,7 +38,7 @@ final class Player: ObservableObject {
         local.streamReady = { [weak self] in guard let self else { return }; self.loading = false; self.playing = self.wantsPlay; self.watchdog?.cancel(); if let track = self.current { self.didPlay?(track) }; self.updateNowPlaying() }
         local.streamFailed = { [weak self] in guard let self else { return }; let key = self.generation; Task { await self.failed("This audio stream stopped. Choose another source or try again.", key: key) } }
         timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
-            Task { @MainActor in guard let self, self.current != nil, self.current?.platform != "spotify" else { return }; self.position = self.local.position; self.playing = self.local.playing; self.updateNowPlaying() }
+            Task { @MainActor in guard let self, self.current != nil, !self.usesSpotify else { return }; self.position = self.local.position; self.playing = self.local.playing; self.updateNowPlaying() }
         }
         let remote = MPRemoteCommandCenter.shared()
         remote.playCommand.addTarget { [weak self] _ in Task { @MainActor in if self?.playing == false { self?.toggle() } }; return .success }
@@ -47,6 +50,7 @@ final class Player: ObservableObject {
     func play(_ track: Track, in tracks: [Track]? = nil, at seconds: Double = 0, paused: Bool = false) {
         if let tracks { queue = Track.unique(tracks) } else if !queue.contains(where: { $0.sameRecording(track) }) { queue = [track] }
         task?.cancel(); watchdog?.cancel(); generation = UUID(); let key = generation
+        offlinePlaying = false
         original = track; excluded = []; current = track; position = seconds; pendingPosition = seconds; wantsPlay = !paused
         duration = track.duration ?? 0; playing = false; loading = true; error = nil
         local.stop()
@@ -54,6 +58,14 @@ final class Player: ObservableObject {
     }
     private func load(_ track: Track, key: UUID) async {
         do {
+            if source == .auto, let url = offlineURL?(track) {
+                try? await runtime.spotifyVoid("playback", ["stop"])
+                try Task.checkCancellation(); guard generation == key else { return }
+                offlinePlaying = true; current = track
+                try local.load(url); duration = local.duration
+                local.seek(pendingPosition, play: wantsPlay); local.apply(effects, volume: volume)
+                loading = false; playing = wantsPlay; didPlay?(track); updateNowPlaying(); return
+            }
             let selected: Track
             var stream: StreamInfo?
             if track.platform == "local" { selected = track }
@@ -113,7 +125,7 @@ final class Player: ObservableObject {
         } else { loading = false; error = message }
     }
     func spotifyEvent(_ value: [String: Any]) {
-        guard current?.platform == "spotify" else { return }
+        guard usesSpotify else { return }
         if let uri = value["uri"] as? String, !uri.hasSuffix(current?.id ?? "") { return }
         switch value["event"] as? String {
         case "metadata":
@@ -137,7 +149,7 @@ final class Player: ObservableObject {
             Task { await pending?.value; guard generation == key else { return }; try? await runtime.spotifyVoid("playback", ["stop"]) }; return
         }
         wantsPlay = !playing
-        if current.platform == "spotify" { let command = playing ? "pause" : "resume"; Task { do { try await runtime.spotifyVoid("playback", [command]) } catch { self.error = error.localizedDescription } } }
+        if usesSpotify { let command = playing ? "pause" : "resume"; Task { do { try await runtime.spotifyVoid("playback", [command]) } catch { self.error = error.localizedDescription } } }
         else if playing { local.pause(); playing = false }
         else if local.loaded { local.resume(); playing = local.playing }
         else { play(current) }
@@ -145,7 +157,7 @@ final class Player: ObservableObject {
     }
     func seek(_ seconds: Double) {
         position = min(max(0, seconds), duration); pendingPosition = position
-        if current?.platform == "spotify" { Task { try? await runtime.spotifyVoid("playback", ["seek", ["positionMs": Int(position * 1000)]]) } }
+        if usesSpotify { Task { try? await runtime.spotifyVoid("playback", ["seek", ["positionMs": Int(position * 1000)]]) } }
         else { local.seek(position, play: playing) }
         updateNowPlaying()
     }
@@ -157,7 +169,7 @@ final class Player: ObservableObject {
         if let data = try? JSONEncoder().encode(AudioPreferences(volume: volume, effects: effects)) { try? data.write(to: runtime.directory.appendingPathComponent("native-audio.json"), options: .atomic) }
         local.apply(effects, volume: volume)
         effectsTask?.cancel()
-        effectsTask = Task { do { try await Task.sleep(for: .milliseconds(100)); if current?.platform == "spotify" { try await runtime.spotifyVoid("playback", ["effects", ["effects": effects.json, "volume": volume]]) } } catch is CancellationError { } catch { self.error = error.localizedDescription } }
+        effectsTask = Task { do { try await Task.sleep(for: .milliseconds(100)); if usesSpotify { try await runtime.spotifyVoid("playback", ["effects", ["effects": effects.json, "volume": volume]]) } } catch is CancellationError { } catch { self.error = error.localizedDescription } }
     }
     func stop() { wantsPlay = false; Task { try? await runtime.spotifyVoid("playback", ["stop"]) }; generation = UUID(); task?.cancel(); watchdog?.cancel(); local.stop(); playing = false; loading = false; current = nil; MPNowPlayingInfoCenter.default().nowPlayingInfo = nil }
     private func updateNowPlaying() {

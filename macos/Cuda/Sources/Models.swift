@@ -61,6 +61,7 @@ struct Playlist: Codable, Identifiable, Equatable {
     var description = ""
     var tracks: [Track] = []
     var spotifyID: String?
+    var artwork: String?
     mutating func add(_ track: Track) { if !tracks.contains(where: { $0.sameRecording(track) }) { tracks.append(track) } }
 }
 struct CollectionState: Codable {

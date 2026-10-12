@@ -51,7 +51,7 @@ final class Runtime: ObservableObject {
             pending[id] = continuation
             do { try input.write(contentsOf: data) } catch { pending.removeValue(forKey: id)?.resume(throwing: error) }
             Task { [weak self] in
-                try? await Task.sleep(for: .seconds(method == "spotify" ? 240 : 50))
+                try? await Task.sleep(for: .seconds(["spotify", "playlistOffline"].contains(method) ? 240 : 50))
                 self?.pending.removeValue(forKey: id)?.resume(throwing: CudaError.message("The music service took too long. Retry or choose another source."))
             }
         }

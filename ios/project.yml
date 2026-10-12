@@ -11,13 +11,21 @@ settings:
   base:
     SWIFT_VERSION: '5.0'
     MARKETING_VERSION: '1.1.2'
-    CURRENT_PROJECT_VERSION: '4'
+    CURRENT_PROJECT_VERSION: '5'
     CODE_SIGN_STYLE: Automatic
 targets:
   Cuda:
     type: application
     platform: iOS
-    sources: [Cuda/Sources, Cuda/Resources, ../shared/SyncState.swift]
+    sources:
+      - Cuda/Sources
+      - path: Cuda/Resources
+        excludes: [Assets.xcassets/AppIcon.appiconset]
+      - ../shared/SyncState.swift
+      - ../shared/OfflinePlaylistState.swift
+      - path: ../assets/Cuda.icon
+        type: file
+        buildPhase: resources
     dependencies:
       - package: SpotifyiOS
     settings:
@@ -25,7 +33,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.veikkaheiskanen.Cuda
         INFOPLIST_FILE: Cuda/Info.plist
         TARGETED_DEVICE_FAMILY: '1,2'
-        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_APPICON_NAME: Cuda
         OTHER_LDFLAGS: '$(inherited) -ObjC'
   CudaTests:
     type: bundle.unit-test

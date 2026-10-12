@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CryptoKit
+import UIKit
 
 @MainActor
 final class Store: ObservableObject {
@@ -13,12 +14,19 @@ final class Store: ObservableObject {
     @Published var message: String?
     @Published var spotifyChoices: [Playlist] = []
     @Published var syncing = false
+    @Published var offline = OfflinePlaylistState()
+    @Published var downloadingPlaylist: String?
+    @Published var downloadProgress = ""
+    private var playlistDownload: Task<Void, Never>?
+    var offlineRoot: URL { root.appendingPathComponent("OfflinePlaylists", isDirectory: true) }
+    private var offlineFile: URL { root.appendingPathComponent("offline-playlists.json") }
     let root: URL
     let audioRoot: URL
     let spotify = Spotify()
     lazy var deviceSync = DeviceSync(store: self)
     lazy var player: Player = {
         let value = Player(spotify: spotify, localRoot: audioRoot) { [weak self] in self?.companion ?? Companion(address: "", token: "") }
+        value.offlineURL = { [weak self] track in guard let self else { return nil }; return self.offline.available(track, root: self.offlineRoot) }
         value.didPlay = { [weak self] track in self?.remember(track) }
         value.prepareCompanion = { [weak self] in
             guard let self, !UserDefaults.standard.bool(forKey: "companionManualOverride") else { return }
@@ -39,6 +47,7 @@ final class Store: ObservableObject {
         audioRoot = root.appendingPathComponent("Audio", isDirectory: true)
         do { try FileManager.default.createDirectory(at: audioRoot, withIntermediateDirectories: true) } catch { message = error.localizedDescription }
         if let data = try? Data(contentsOf: root.appendingPathComponent("shelf.json")), let decoded = try? JSONDecoder().decode(CollectionState.self, from: data) { state = decoded }
+        if let data = try? Data(contentsOf: offlineFile), let saved = try? JSONDecoder().decode(OfflinePlaylistState.self, from: data) { offline = saved }
         // Migrate the initial iOS port’s full-hash IDs without losing saved references.
         func migrate(_ track: Track) -> Track { var t = track; if t.platform == "local", t.id.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil { t.id = "local_" + String(t.id.prefix(12)) }; return t }
         state.local = state.local.map(migrate); state.favourites = state.favourites.map(migrate); state.history = state.history.map(migrate)
@@ -76,6 +85,49 @@ final class Store: ObservableObject {
     func remove(_ track: Track, playlistID: String) {
         guard let index = state.playlists.firstIndex(where: { $0.id == playlistID }) else { return }
         state.playlists[index].tracks.removeAll { $0.key == track.key }; save()
+    }
+    func offlineCount(_ playlist: Playlist) -> Int { playlist.tracks.filter { offline.available($0, root: offlineRoot) != nil || $0.platform == "local" && $0.localFile != nil }.count }
+    func downloadPlaylist(_ id: String) {
+        guard downloadingPlaylist == nil, let playlist = state.playlists.first(where: { $0.id == id }) else { return }
+        downloadingPlaylist = id
+        playlistDownload = Task {
+            defer { try? JSONEncoder().encode(offline).write(to: offlineFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]); downloadingPlaylist = nil; downloadProgress = ""; playlistDownload = nil }
+            guard let pairing = deviceSync.pairing else { message = "Pair your Mac in Settings to download public songs on this device."; return }
+            let connection = SyncConnection(pairing, waitsForConnectivity: false)
+            defer { connection.session.invalidateAndCancel() }
+            var failed = 0
+            offline.playlists[id] = playlist.tracks.map(\.key)
+            for (index, track) in playlist.tracks.enumerated() {
+                if Task.isCancelled { break }
+                downloadProgress = "Downloading \(index + 1) of \(playlist.tracks.count)…"
+                if offline.available(track, root: offlineRoot) != nil || track.platform == "local" && track.localFile != nil { continue }
+                do {
+                    let result = try await connection.downloadOffline(track, to: offlineRoot)
+                    offline.files[track.key] = result
+                    try JSONEncoder().encode(offline).write(to: offlineFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                } catch is CancellationError { break }
+                catch { failed += 1 }
+            }
+            message = failed > 0 ? "Saved \(offlineCount(playlist)) of \(playlist.tracks.count) songs on this device. \(failed) public-source downloads were unavailable." : "Playlist saved on this device. Its downloaded audio won’t sync automatically."
+        }
+    }
+    func cancelPlaylistDownload() { playlistDownload?.cancel() }
+    func removePlaylistDownloads(_ id: String) {
+        guard downloadingPlaylist == nil else { return }; offline.playlists.removeValue(forKey: id)
+        let keep = Set(offline.playlists.values.flatMap { $0 })
+        for key in Array(offline.files.keys) where !keep.contains(key) { if let filename = offline.files.removeValue(forKey: key), filename.range(of: "^[a-f0-9]{64}\\.m4a$", options: .regularExpression) != nil { try? FileManager.default.removeItem(at: offlineRoot.appendingPathComponent(filename)) } }
+        try? JSONEncoder().encode(offline).write(to: offlineFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+    func setPlaylistArtwork(_ data: Data, id: String) {
+        guard let image = UIImage(data: data), image.size.width > 0, image.size.height > 0, let index = state.playlists.firstIndex(where: { $0.id == id }) else { message = "This image could not be opened."; return }
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+        let square = UIGraphicsImageRenderer(size: CGSize(width: 384, height: 384), format: format).image { _ in
+            let scale = max(384 / image.size.width, 384 / image.size.height)
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            image.draw(in: CGRect(x: (384-size.width)/2, y: (384-size.height)/2, width: size.width, height: size.height))
+        }
+        guard let bytes = square.jpegData(compressionQuality: 0.65), bytes.count <= 130000 else { message = "Choose a smaller playlist image."; return }
+        state.playlists[index].artwork = "data:image/jpeg;base64," + bytes.base64EncodedString(); save()
     }
     func search(_ query: String) async {
         let key = UUID(); searchGeneration = key

@@ -17,6 +17,9 @@ final class Player: ObservableObject {
     @Published var error: String?
     let spotify: Spotify
     var companion: () -> Companion
+    var offlineURL: ((Track) -> URL?)?
+    @Published private(set) var offlinePlaying = false
+    var usesSpotify: Bool { current?.platform == "spotify" && !offlinePlaying }
     var didPlay: ((Track) -> Void)?
     var prepareCompanion: (() async -> Void)?
     private var audio = AVPlayer()
@@ -38,7 +41,7 @@ final class Player: ObservableObject {
         self.spotify = spotify; self.localRoot = localRoot; self.companion = companion
         timeToken = audio.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] time in
             Task { @MainActor in
-                guard let self, self.current?.platform != "spotify" else { return }
+                guard let self, !self.usesSpotify else { return }
                 self.position = time.seconds.isFinite ? time.seconds : 0
                 if let d = self.audio.currentItem?.duration.seconds, d.isFinite { self.duration = d }
                 self.updateNowPlaying()
@@ -46,7 +49,7 @@ final class Player: ObservableObject {
         }
         timeControl = audio.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in
-                guard let self, self.current?.platform != "spotify" else { return }
+                guard let self, !self.usesSpotify else { return }
                 self.playing = self.audio.timeControlStatus == .playing
                 if self.playing { self.loading = false; self.watchdog?.cancel(); if let track = self.current { self.didPlay?(track) } }
                 self.updateNowPlaying()
@@ -60,7 +63,7 @@ final class Player: ObservableObject {
         }
         interruptToken = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             Task { @MainActor in
-                guard let self, self.current?.platform != "spotify", let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                guard let self, !self.usesSpotify, let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                       let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
                 if type == .began { self.audio.pause() }
                 else if let options = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt, AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
@@ -74,14 +77,14 @@ final class Player: ObservableObject {
             }
         }
         spotify.onState = { [weak self] incoming, playing, position in
-            guard let self, self.current == nil || self.current?.platform == "spotify" else { return }
+            guard let self, self.current == nil || self.usesSpotify else { return }
             var track = incoming
             track.thumbnail = self.current?.key == track.key ? self.current?.thumbnail : self.queue.first(where: { $0.key == track.key })?.thumbnail
             self.current = track; self.playing = playing; self.loading = false; self.position = position; self.duration = track.duration ?? 0
             if playing { self.didPlay?(track) }
         }
         spotify.onFailure = { [weak self] message in
-            guard let self, let track = self.selectedOriginal, self.current?.platform == "spotify" else { return }
+            guard let self, let track = self.selectedOriginal, self.usesSpotify else { return }
             self.playing = false
             let companion = self.companion()
             if self.source == .auto, Companion.validAddress(companion.address), !companion.token.isEmpty, !self.excluded.contains(track.key) {
@@ -101,6 +104,7 @@ final class Player: ObservableObject {
     func play(_ track: Track, in tracks: [Track]? = nil) {
         if let tracks { queue = Track.unique(tracks); queueIndex = queue.firstIndex { $0.key == track.key } ?? 0 }
         else if queue.isEmpty || !queue.contains(where: { $0.key == track.key }) { queue = [track]; queueIndex = 0 }
+        offlinePlaying = false
         selectedOriginal = track; excluded = []; generation = UUID(); task?.cancel(); watchdog?.cancel()
         audio.pause(); audio.replaceCurrentItem(with: nil); status = nil
         current = track; position = 0; duration = track.duration ?? 0; loading = true; playing = false; error = nil
@@ -109,7 +113,9 @@ final class Player: ObservableObject {
     private func load(_ track: Track, generation key: UUID) {
         task = Task {
             do {
-                if source == .spotify || (track.platform == "spotify" && source == .auto && !excluded.contains(track.key)) {
+                let cached = source == .auto ? offlineURL?(track) : nil
+                offlinePlaying = cached != nil
+                if cached == nil && (source == .spotify || (track.platform == "spotify" && source == .auto && !excluded.contains(track.key))) {
                     var selected = track
                     if track.platform != "spotify" {
                         let candidates = try await spotify.search(track.artist + " " + track.title)
@@ -136,7 +142,8 @@ final class Player: ObservableObject {
                 try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
                 try AVAudioSession.sharedInstance().setActive(true)
                 let selected: Track; let url: URL
-                if track.platform == "local", let file = track.localFile, !file.contains("/"), !file.contains("..") {
+                if let cached { selected = track; url = cached }
+                else if track.platform == "local", let file = track.localFile, !file.contains("/"), !file.contains("..") {
                     selected = track; url = localRoot.appendingPathComponent(file)
                 } else {
                     await prepareCompanion?()
@@ -170,17 +177,22 @@ final class Player: ObservableObject {
     }
     func toggle() {
         guard let current else { return }
-        if current.platform == "spotify" { do { try spotify.toggle(paused: !playing) } catch { self.error = error.localizedDescription }; return }
+        if usesSpotify { do { try spotify.toggle(paused: !playing) } catch { self.error = error.localizedDescription }; return }
         if loading { task?.cancel(); watchdog?.cancel(); generation = UUID(); loading = false; audio.pause(); return }
         if playing { audio.pause() } else if audio.currentItem?.status == .failed || audio.currentItem == nil { play(current) } else { audio.play() }
     }
+    func stop() {
+        task?.cancel(); watchdog?.cancel(); generation = UUID(); audio.pause(); audio.replaceCurrentItem(with: nil); spotify.deactivate()
+        current = nil; selectedOriginal = nil; playing = false; loading = false; offlinePlaying = false
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
     func seek(_ seconds: Double) {
         let value = max(0, min(seconds, max(duration, 0)))
-        if current?.platform == "spotify" { spotify.seek(value) }
+        if usesSpotify { spotify.seek(value) }
         else { audio.seek(to: CMTime(seconds: value, preferredTimescale: 600)); position = value }
     }
     func next() {
-        if queue.count <= 1, current?.platform == "spotify" { spotify.next(); return }
+        if queue.count <= 1, usesSpotify { spotify.next(); return }
         guard !queue.isEmpty else { return }
         if shuffle && queue.count > 1 { queueIndex = (0..<queue.count).filter { $0 != queueIndex }.randomElement() ?? 0 }
         else { guard queueIndex + 1 < queue.count else { audio.pause(); playing = false; return }; queueIndex += 1 }
@@ -188,17 +200,17 @@ final class Player: ObservableObject {
     }
     func previous() {
         if position > 3 { seek(0); return }
-        if queue.count <= 1, current?.platform == "spotify" { spotify.previous(); return }
+        if queue.count <= 1, usesSpotify { spotify.previous(); return }
         guard !queue.isEmpty else { return }; queueIndex = max(0, queueIndex - 1); play(queue[queueIndex], in: queue)
     }
     func changeSource(_ value: Source) { source = value; if let track = selectedOriginal ?? current { play(track, in: queue) } }
     func disconnectCompanion() {
-        guard let current, current.platform != "local", current.platform != "spotify" else { return }
+        guard let current, !offlinePlaying, current.platform != "local", current.platform != "spotify" else { return }
         task?.cancel(); watchdog?.cancel(); generation = UUID(); audio.pause(); audio.replaceCurrentItem(with: nil)
         playing = false; loading = false
     }
     private func updateNowPlaying() {
-        guard let current, current.platform != "spotify" else { return }
+        guard let current, !usesSpotify else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [MPMediaItemPropertyTitle: current.title, MPMediaItemPropertyArtist: current.artist,
             MPMediaItemPropertyPlaybackDuration: duration, MPNowPlayingInfoPropertyElapsedPlaybackTime: position, MPNowPlayingInfoPropertyPlaybackRate: playing ? 1 : 0]
     }

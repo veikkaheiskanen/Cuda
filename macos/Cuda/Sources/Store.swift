@@ -14,11 +14,18 @@ final class Store: ObservableObject {
     @Published var mood = "all"
     @Published var syncing = false
     @Published var ready = false
+    @Published var offline = OfflinePlaylistState()
+    @Published var downloadingPlaylist: String?
+    @Published var downloadProgress = ""
+    private var playlistDownload: Task<Void, Never>?
+    var offlineRoot: URL { runtime.directory.appendingPathComponent("offline-playlists", isDirectory: true) }
+    private var offlineFile: URL { runtime.directory.appendingPathComponent("native-offline-playlists.json") }
     @Published var message: String?
     @Published var notice: String?
     let runtime = Runtime()
     lazy var player: Player = {
         let player = Player(runtime: runtime)
+        player.offlineURL = { [weak self] track in guard let self else { return nil }; return self.offline.available(track, root: self.offlineRoot) }
         player.didPlay = { [weak self] track in self?.played(track) }
         return player
     }()
@@ -29,6 +36,7 @@ final class Store: ObservableObject {
     private var likeTask: Task<Void, Never>?
     private var file: URL { runtime.directory.appendingPathComponent("native-shelf.json") }
     init() {
+        if let data = try? Data(contentsOf: offlineFile), let saved = try? JSONDecoder().decode(OfflinePlaylistState.self, from: data) { offline = saved }
         if let data = try? Data(contentsOf: file), let value = try? JSONDecoder().decode(CollectionState.self, from: data) { state = value }
         runtime.event = { [weak self] event in self?.receive(event) }
     }
@@ -144,6 +152,49 @@ final class Store: ObservableObject {
             if !state.playlists.contains(where: { $0.id == playlist.id }) { state.playlists.append(playlist); save() }
             notice = "Added to Shelf."
         } catch { message = error.localizedDescription }
+    }
+    func offlineCount(_ playlist: Playlist) -> Int { playlist.tracks.filter { track in offline.available(track, root: offlineRoot) != nil || track.platform == "local" && state.local.contains(where: { $0.key == track.key }) }.count }
+    func downloadPlaylist(_ id: String) {
+        guard downloadingPlaylist == nil, let playlist = state.playlists.first(where: { $0.id == id }) else { return }
+        downloadingPlaylist = id
+        playlistDownload = Task {
+            var failed = 0
+            offline.playlists[id] = playlist.tracks.map(\.key)
+            defer { try? JSONEncoder().encode(offline).write(to: offlineFile, options: .atomic); downloadingPlaylist = nil; downloadProgress = ""; playlistDownload = nil }
+            for (index, track) in playlist.tracks.enumerated() {
+                if Task.isCancelled { break }
+                downloadProgress = "Downloading \(index + 1) of \(playlist.tracks.count)…"
+                if track.platform == "local" || offline.available(track, root: offlineRoot) != nil { continue }
+                do {
+                    struct Result: Decodable { var filename: String }
+                    let result = try JSONDecoder().decode(Result.self, from: await runtime.call("playlistOffline", ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track))]))
+                    guard result.filename.range(of: "^[a-f0-9]{64}\\.m4a$", options: .regularExpression) != nil else { throw CudaError.message("Invalid download file.") }
+                    offline.files[track.key] = result.filename; offline.playlists[id] = playlist.tracks.map(\.key)
+                    try JSONEncoder().encode(offline).write(to: offlineFile, options: .atomic)
+                } catch { failed += 1 }
+            }
+            notice = failed > 0 ? "Saved \(offlineCount(playlist)) of \(playlist.tracks.count) songs on this Mac. \(failed) could not be downloaded from a matching public source." : "Playlist saved on this Mac. These downloads won’t sync to your iPhone."
+        }
+    }
+    func cancelPlaylistDownload() { playlistDownload?.cancel() }
+    func removePlaylistDownloads(_ id: String) {
+        guard downloadingPlaylist == nil else { return }
+        offline.playlists.removeValue(forKey: id)
+        let keep = Set(offline.playlists.values.flatMap { $0 })
+        for key in Array(offline.files.keys) where !keep.contains(key) { if let filename = offline.files.removeValue(forKey: key), filename.range(of: "^[a-f0-9]{64}\\.m4a$", options: .regularExpression) != nil { try? FileManager.default.removeItem(at: offlineRoot.appendingPathComponent(filename)) } }
+        try? JSONEncoder().encode(offline).write(to: offlineFile, options: .atomic)
+    }
+    func setPlaylistArtwork(_ id: String) {
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.canChooseDirectories = false; panel.message = "Choose a playlist cover."
+        panel.begin { response in Task { @MainActor in
+            guard response == .OK, let url = panel.url, let image = NSImage(contentsOf: url), let index = self.state.playlists.firstIndex(where: { $0.id == id }) else { return }
+            let square = NSImage(size: NSSize(width: 384, height: 384)); square.lockFocus()
+            let side = min(image.size.width, image.size.height)
+            image.draw(in: NSRect(x: 0, y: 0, width: 384, height: 384), from: NSRect(x: (image.size.width-side)/2, y: (image.size.height-side)/2, width: side, height: side), operation: .copy, fraction: 1)
+            square.unlockFocus()
+            guard let tiff = square.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.65]), data.count <= 130000 else { self.message = "Choose a smaller image for your playlist cover."; return }
+            self.state.playlists[index].artwork = "data:image/jpeg;base64," + data.base64EncodedString(); self.save()
+        } }
     }
     func download(_ track: Track) async {
         do { let data = try await runtime.call("downloadOffline", ["path": path("/api/download", ["id": track.id, "url": track.url, "platform": track.platform, "title": track.title, "artist": track.artist])]); state.local = try JSONDecoder().decode([Track].self, from: data); save(); notice = "Saved offline and ready to sync." } catch { message = error.localizedDescription }

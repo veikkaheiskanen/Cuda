@@ -65,6 +65,33 @@ struct SyncConnection {
         let (data, response) = try await session.data(for: request("/sync/health")); try validate(response)
         let value = try JSONDecoder().decode(Health.self, from: data); guard value.version == 1, value.id == pairing.id else { throw CudaError.message("This is a different Mac. Pair it in Settings.") }; return value.id
     }
+    func downloadOffline(_ track: Track, to root: URL) async throws -> String {
+        struct Job: Decodable { var id: String; var status: String; var filename: String?; var hash: String?; var size: Int64?; var error: String? }
+        let body = try JSONSerialization.data(withJSONObject: ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track))])
+        let (data, response) = try await session.data(for: request("/sync/offline-download", method: "POST", body: body))
+        try validate(response)
+        var job = try JSONDecoder().decode(Job.self, from: data)
+        guard job.id.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil else { throw CudaError.message("Invalid offline download.") }
+        for _ in 0..<240 {
+            try Task.checkCancellation()
+            if job.status == "ready" { break }
+            if job.status == "failed" { throw CudaError.message(job.error ?? "This public source could not be downloaded.") }
+            try await Task.sleep(for: .milliseconds(500))
+            let (data, response) = try await session.data(for: request("/sync/offline-status?id=" + job.id)); try validate(response)
+            let next = try JSONDecoder().decode(Job.self, from: data)
+            guard next.id == job.id else { throw CudaError.message("Offline download changed unexpectedly.") }; job = next
+        }
+        guard job.status == "ready", let filename = job.filename, filename == job.id + ".m4a", let hash = job.hash, hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil, let size = job.size, size > 0, size <= 512 * 1024 * 1024 else { throw CudaError.message("Offline download is not ready. Try again.") }
+        let (temp, response) = try await session.download(for: request("/sync/offline-file?id=" + job.id))
+        defer { try? FileManager.default.removeItem(at: temp) }; try validate(response)
+        guard (try temp.resourceValues(forKeys: [.fileSizeKey])).fileSize == Int(size), try await DeviceSync.digest(temp) == hash else { throw CudaError.message("Offline audio verification failed. Retry this song.") }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let target = root.appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+        try FileManager.default.moveItem(at: temp, to: target)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: target.path)
+        return filename
+    }
     func integrations() async throws -> IntegrationSetup? {
         var req = try request("/sync/integrations"); req.timeoutInterval = 20
         let (data, response) = try await session.data(for: req)

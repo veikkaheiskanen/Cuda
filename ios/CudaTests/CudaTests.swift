@@ -65,13 +65,13 @@ final class CudaTests: XCTestCase {
               let link = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: url)).link else { throw XCTSkip("Start the isolated sync fixture.") }
         let store = Store.shared, sync = store.deviceSync
         guard sync.pairing == nil else { throw XCTSkip("This test only uses an unpaired, isolated app profile.") }
-        let original = store.state
+        let original = store.state, originalOffline = store.offline
         let accounts = ["device-sync", "device-companion", "device-integrations"], keys = accounts.map { Keychain.read($0) }
         let names = ["sync-enabled", "sync-offline", "companionManualOverride", "sync-accounts"], settings = names.map { UserDefaults.standard.object(forKey: $0) }
         let files = ["shelf.json", "sync-journal.json"].map { store.root.appendingPathComponent($0) }
         let contents = files.map { try? Data(contentsOf: $0) }
         defer {
-            store.state = original; store.save()
+            store.state = original; store.offline = originalOffline; store.save()
             for (index, account) in accounts.enumerated() { try? Keychain.write(keys[index], account: account) }
             for (index, name) in names.enumerated() { if let value = settings[index] { UserDefaults.standard.set(value, forKey: name) } else { UserDefaults.standard.removeObject(forKey: name) } }
             for (index, file) in files.enumerated() { if let data = contents[index] { try? data.write(to: file, options: .atomic) } else { try? FileManager.default.removeItem(at: file) } }
@@ -98,6 +98,20 @@ final class CudaTests: XCTestCase {
             for _ in 0..<100 { if store.player.playing { break }; try await Task.sleep(for: .milliseconds(100)) }
             XCTAssertTrue(store.player.playing, store.player.error ?? "Paired companion audio did not start")
             XCTAssertEqual(store.player.current?.platform, "youtube")
+            let connection = SyncConnection(paired); defer { connection.session.invalidateAndCancel() }
+            let name = try await connection.downloadOffline(song, to: store.offlineRoot)
+            defer { try? FileManager.default.removeItem(at: store.offlineRoot.appendingPathComponent(name)) }
+            store.offline.files[song.key] = name
+            let envelope = try await connection.exchange([])
+            XCTAssertFalse(envelope.assets.contains { $0.filename == name })
+            sync.disconnect()
+            for _ in 0..<100 { if !sync.busy { break }; try? await Task.sleep(for: .milliseconds(20)) }
+            store.player.play(song)
+            for _ in 0..<100 { if store.player.playing { break }; try await Task.sleep(for: .milliseconds(100)) }
+            XCTAssertTrue(store.player.playing, store.player.error ?? "Offline playlist audio did not start")
+            XCTAssertTrue(store.player.offlinePlaying)
+            XCTAssertNil(sync.playback)
+            store.player.stop()
         } catch {
             sync.disconnect()
             for _ in 0..<100 { if !sync.busy { break }; try? await Task.sleep(for: .milliseconds(20)) }
@@ -128,6 +142,15 @@ final class CudaTests: XCTestCase {
             let outside = (height / 2 * width + Int(side + 10)) * 4
             XCTAssertGreaterThan(bytes[outside], 240); XCTAssertGreaterThan(bytes[outside + 1], 240); XCTAssertGreaterThan(bytes[outside + 2], 240, "Wide cover overflow at size \(side)")
         }
+    }
+    func testOfflinePlaylistCatalogueDoesNotEnterShelfSync() throws {
+        var playlist = Playlist(name: "Offline", tracks: [track()]); playlist.artwork = "data:image/jpeg;base64,Zml4dHVyZQ=="
+        var state = CollectionState(); state.playlists = [playlist]
+        var offline = OfflinePlaylistState(); offline.files[track().key] = String(repeating: "a", count: 64) + ".m4a"; offline.playlists[playlist.id] = [track().key]
+        var journal = ShelfSyncJournal(); journal.capture(state)
+        let encoded = String(decoding: try JSONEncoder().encode(journal), as: UTF8.self)
+        XCTAssertTrue(encoded.contains("artwork")); XCTAssertFalse(encoded.contains("\"files\"")); XCTAssertFalse(encoded.contains(String(repeating: "a", count: 64)))
+        var received = CollectionState(); journal.apply(to: &received); XCTAssertEqual(received.playlists.first?.artwork, playlist.artwork)
     }
     func testSyncedAccountSetupRejectsAnotherMacAndUnsupportedKeys() throws {
         var value = IntegrationSetup(version: 1, macID: "test-mac", spotify: .init(clientID: String(repeating: "a", count: 32), connected: true, accessToken: "fixture", expiresAt: Date().timeIntervalSince1970 * 1000 + 3600000, scope: "", account: "Test"), lyrics: ["musixmatch": "fixture"], lastfm: .init(username: "", apiKey: ""))
