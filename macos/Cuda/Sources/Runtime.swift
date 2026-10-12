@@ -47,13 +47,19 @@ final class Runtime: ObservableObject {
         guard let input else { throw CudaError.message("Cuda is starting. Try again in a moment.") }
         serial += 1; let id = serial
         var data = try JSONSerialization.data(withJSONObject: ["id": id, "method": method, "args": args]); data.append(10)
-        return try await withCheckedThrowingContinuation { continuation in
+        if method == "playlistOffline" { try Task.checkCancellation() }
+        return try await withTaskCancellationHandler {
+          try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
             do { try input.write(contentsOf: data) } catch { pending.removeValue(forKey: id)?.resume(throwing: error) }
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(["spotify", "playlistOffline"].contains(method) ? 240 : 50))
                 self?.pending.removeValue(forKey: id)?.resume(throwing: CudaError.message("The music service took too long. Retry or choose another source."))
             }
+          }
+        } onCancel: { [weak self] in
+            guard method == "playlistOffline" else { return }
+            Task { @MainActor in self?.pending.removeValue(forKey: id)?.resume(throwing: CancellationError()) }
         }
     }
     func api<T: Decodable>(_ path: String, body: [String: Any]? = nil) async throws -> T {

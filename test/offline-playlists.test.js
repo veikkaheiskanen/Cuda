@@ -9,6 +9,7 @@ test('playlist downloads live outside sync library and are reused without export
  const f=fixture(t);const one=await f.downloads.save(track);const two=await f.downloads.save(track);assert.equal(one.filename,two.filename);assert.equal(f.calls(),1);assert.equal(one.hash,crypto.createHash('sha256').update('original-test-audio').digest('hex'));
  const service=new ShelfSyncService({directory:f.directory,store:{decryptString(){throw Error('empty');}},api:async()=>[],offlineDownloads:f.downloads});await service.scan();assert.equal(service.assets.size,0);await service.close();
  assert.equal(fs.existsSync(path.join(f.directory,'library',one.filename)),false);assert.equal(fs.statSync(one.file).mode&0o777,0o600);
+ fs.unlinkSync(one.file);await f.downloads.save(track);assert.equal(f.calls(),2,'removed downloads must be recreated');
 });
 test('Spotify playlist offline uses matching public recordings, never Spotify audio',async t=>{
  let received;const f=fixture(t,{resolve:async value=>{received=value;return track;}});

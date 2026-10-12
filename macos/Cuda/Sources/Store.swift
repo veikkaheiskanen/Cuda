@@ -168,12 +168,13 @@ final class Store: ObservableObject {
                 do {
                     struct Result: Decodable { var filename: String }
                     let result = try JSONDecoder().decode(Result.self, from: await runtime.call("playlistOffline", ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track))]))
+                    try Task.checkCancellation()
                     guard result.filename.range(of: "^[a-f0-9]{64}\\.m4a$", options: .regularExpression) != nil else { throw CudaError.message("Invalid download file.") }
                     offline.files[track.key] = result.filename; offline.playlists[id] = playlist.tracks.map(\.key)
                     try JSONEncoder().encode(offline).write(to: offlineFile, options: .atomic)
                 } catch { failed += 1 }
             }
-            notice = failed > 0 ? "Saved \(offlineCount(playlist)) of \(playlist.tracks.count) songs on this Mac. \(failed) could not be downloaded from a matching public source." : "Playlist saved on this Mac. These downloads won’t sync to your iPhone."
+            notice = Task.isCancelled ? "Download paused. \(offlineCount(playlist)) of \(playlist.tracks.count) songs are available on this Mac." : failed > 0 ? "Saved \(offlineCount(playlist)) of \(playlist.tracks.count) songs on this Mac. \(failed) could not be downloaded from a matching public source." : "Playlist saved on this Mac. These downloads won’t sync to your iPhone."
         }
     }
     func cancelPlaylistDownload() { playlistDownload?.cancel() }

@@ -108,7 +108,7 @@ final class Store: ObservableObject {
                 } catch is CancellationError { break }
                 catch { failed += 1 }
             }
-            message = failed > 0 ? "Saved \(offlineCount(playlist)) of \(playlist.tracks.count) songs on this device. \(failed) public-source downloads were unavailable." : "Playlist saved on this device. Its downloaded audio won’t sync automatically."
+            message = Task.isCancelled ? "Download paused. \(offlineCount(playlist)) of \(playlist.tracks.count) songs are available on this device." : failed > 0 ? "Saved \(offlineCount(playlist)) of \(playlist.tracks.count) songs on this device. \(failed) public-source downloads were unavailable." : "Playlist saved on this device. Its downloaded audio won’t sync automatically."
         }
     }
     func cancelPlaylistDownload() { playlistDownload?.cancel() }

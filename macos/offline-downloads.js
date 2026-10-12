@@ -15,7 +15,7 @@ class OfflineDownloads {
  execute(bin,args){return new Promise((resolve,reject)=>{const process=spawnTool(bin,args,{windowsHide:true});let error='';process.stdout.resume();process.stderr.on('data',d=>{error=(error+d).slice(-2000);});const timeout=setTimeout(()=>{terminateTool(process);reject(Error('Offline download timed out. Retry this song.'));},120000);process.once('error',e=>{clearTimeout(timeout);reject(e);});process.once('close',code=>{clearTimeout(timeout);code===0?resolve():reject(Error(/sign in|login|bot/i.test(error)?'This source requires authorization on your Mac.':/DRM|protected/i.test(error)?'This source does not allow this download.':'The public source could not be downloaded.'));});});}
  start(track){
   this.validate(track);const id=crypto.createHash('sha256').update(track.platform+':'+track.id).digest('hex');
-  const existing=this.jobs.get(id);if(existing?.status==='working'||existing?.status==='ready')return{id,status:existing.status};
+  const existing=this.jobs.get(id);if(existing?.status==='working'||existing?.status==='ready'&&fs.existsSync(existing.file))return{id,status:existing.status};
   if([...this.jobs.values()].filter(j=>j.status==='working').length>=2)throw Error('Two songs are already downloading. Retry shortly.');
   while(this.jobs.size>=100){const key=[...this.jobs].find(([,j])=>j.status!=='working')?.[0];if(!key)throw Error('Download queue is full.');this.jobs.delete(key);}
   const job={id,status:'working'};this.jobs.set(id,job);
@@ -23,7 +23,7 @@ class OfflineDownloads {
   return{id,status:job.status};
  }
  status(id){const job=this.jobs.get(id);if(!job)throw Error('Download not found. Retry this song.');const {promise,file,...value}=job;return value;}
- file(id){const job=this.jobs.get(id);if(!job||job.status!=='ready')throw Error('Download is not ready.');return job.file;}
+ file(id){const job=this.jobs.get(id);if(!job||job.status!=='ready'||!fs.existsSync(job.file))throw Error('Download is not ready.');return job.file;}
  async save(track){const {id}=this.start(track);await this.jobs.get(id).promise;const job=this.jobs.get(id);if(job.status!=='ready')throw Error(job.error);return{...this.status(id),file:job.file};}
  async download(original,id){
   const filename=id+'.m4a',file=path.join(this.root,filename);
