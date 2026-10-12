@@ -16,13 +16,14 @@ struct CudaApp: App {
                 .modifier(UpdatePrompt())
                 .modifier(DeviceSyncPrompt(sync: store.deviceSync))
                 .onChange(of: phase) { _, phase in
+                    guard ProcessInfo.processInfo.environment["CUDA_DEMO"] != "1" else { return }
                     if phase == .active { AppUpdates.shared.activate(); store.spotify.foreground(); store.deviceSync.activate(true) }
                     if phase != .active { store.spotify.background() }
                     if phase == .background { store.deviceSync.activate(false) }
                 }
                 .onAppear {
                     AppUpdates.shared.activate()
-                    store.deviceSync.activate(true)
+                    if ProcessInfo.processInfo.environment["CUDA_DEMO"] != "1" { store.deviceSync.activate(true) }
                     #if DEBUG
                     store.seedPreview()
                     #endif

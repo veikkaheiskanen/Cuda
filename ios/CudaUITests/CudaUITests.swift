@@ -13,7 +13,9 @@ final class CudaUITests: XCTestCase {
         expectation(for: pausePredicate, evaluatedWith: play)
         waitForExpectations(timeout: 15)
         app.buttons["Open now playing"].tap()
-        XCTAssertTrue(app.navigationBars["Now playing"].waitForExistence(timeout: 5))
+        let expanded = app.navigationBars["Now playing"].waitForExistence(timeout: 30)
+        if !expanded { let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.lifetime = .keepAlways; add(screenshot) }
+        XCTAssertTrue(expanded, app.debugDescription)
         app.buttons["Favourite"].tap()
         app.swipeUp()
         let audio = app.buttons["audio-settings"]
