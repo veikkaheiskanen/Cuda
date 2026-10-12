@@ -28,6 +28,8 @@ struct CompanionSetup: Decodable {
 struct Companion {
     var address: String
     var token: String
+    var session: URLSession = .shared
+    var serviceChoices: [String]? = nil
     static func validAddress(_ text: String) -> Bool {
         guard let u = URLComponents(string: text), let host = u.host, u.user == nil, u.password == nil,
               u.query == nil, u.fragment == nil, u.path.isEmpty || u.path == "/" else { return false }
@@ -50,7 +52,7 @@ struct Companion {
         var req = URLRequest(url: try endpoint(path, items: items)); req.timeoutInterval = 45
         req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         if let body { req.httpMethod = "POST"; req.httpBody = body; req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await session.data(for: req)
         guard let response = response as? HTTPURLResponse, (200...299).contains(response.statusCode) else {
             if let failure = try? JSONDecoder().decode(SearchResponse.self, from: data), let message = failure.error { throw CudaError.message(message) }
             throw CudaError.message("The Mac companion is unavailable. Check the address, pairing key, and that Cuda is open.")
@@ -58,24 +60,39 @@ struct Companion {
         return try JSONDecoder().decode(T.self, from: data)
     }
     @MainActor
-    private var serviceItems: [URLQueryItem] { [.init(name: "services", value: StreamingPreferences.shared.enabled.joined(separator: ","))] }
+    private var services: [String] { serviceChoices ?? StreamingPreferences.shared.enabled }
+    @MainActor
+    private var serviceItems: [URLQueryItem] { [.init(name: "services", value: services.joined(separator: ","))] }
+    @MainActor
+    private func validateServiceChoices() async throws {
+        guard services != Array(StreamingPreferences.services.dropLast()) else { return }
+        // Older companions ignored source-policy fields. Negotiate using a
+        // zero-history, zero-service request, which cannot contact any provider.
+        do {
+            let response: RecommendationResponse = try await request("/api/vibe", body: Data("{\"history\":[],\"services\":[]}".utf8))
+            guard response.genres != nil, response.genre != nil else { throw CudaError.message("Old companion") }
+        } catch { throw CudaError.message("Update Cuda on your paired Mac to version 1.0.9 or later to apply streaming service choices.") }
+    }
     @MainActor
     func recommendations(history: [Track], favourites: [Track], playlists: [Track], genre: String, seen: [String]) async throws -> RecommendationResponse {
-        let body = try JSONSerialization.data(withJSONObject: ["history": JSONSerialization.jsonObject(with: JSONEncoder().encode(history)), "favorites": JSONSerialization.jsonObject(with: JSONEncoder().encode(favourites)), "playlists": JSONSerialization.jsonObject(with: JSONEncoder().encode(playlists)), "genre": genre, "seen": seen, "services": StreamingPreferences.shared.enabled, "limit": 20])
+        let body = try JSONSerialization.data(withJSONObject: ["history": JSONSerialization.jsonObject(with: JSONEncoder().encode(history)), "favorites": JSONSerialization.jsonObject(with: JSONEncoder().encode(favourites)), "playlists": JSONSerialization.jsonObject(with: JSONEncoder().encode(playlists)), "genre": genre, "seen": seen, "services": services, "limit": 20])
         return try await request("/api/vibe", body: body)
     }
     @MainActor
     func search(_ query: String, source: Source = .auto) async throws -> [Track] {
+        guard services.contains(where: { $0 != "spotify" }) else { return [] }
+        try await validateServiceChoices()
         let result: SearchResponse = try await request("/api/search", items: [.init(name: "q", value: query), .init(name: "platform", value: source.rawValue), .init(name: "limit", value: "20")] + serviceItems)
         return result.tracks ?? []
     }
     @MainActor
     func stream(_ track: Track, source: Source, excluded: [String] = []) async throws -> (Track, URL) {
+        try await validateServiceChoices()
         if source == .auto {
             // Exclude Mac-native Spotify: its audio is played locally by the official iOS SDK.
-            let body = try JSONSerialization.data(withJSONObject: ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track)), "exclude": excluded, "mobile": true, "services": StreamingPreferences.shared.enabled])
+            let body = try JSONSerialization.data(withJSONObject: ["track": JSONSerialization.jsonObject(with: JSONEncoder().encode(track)), "exclude": excluded, "mobile": true, "services": services])
             let value: PlaybackResponse = try await request("/api/playback-source", body: body)
-            guard let selected = value.track, selected.platform != "spotify", let raw = value.stream?.proxyUrl ?? value.stream?.streamUrl ?? value.stream?.url, let url = URL(string: raw) else {
+            guard let selected = value.track, selected.platform != "spotify", services.contains(selected.platform), let raw = value.stream?.proxyUrl ?? value.stream?.streamUrl ?? value.stream?.url, let url = URL(string: raw) else {
                 throw CudaError.message(value.error ?? "This source could not start. Choose another source and retry.")
             }
             return (selected, url)
